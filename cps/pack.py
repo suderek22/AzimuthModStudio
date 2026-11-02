@@ -5,6 +5,7 @@ import re
 import shutil
 import sqlite3
 import zipfile
+from contextlib import closing, ExitStack
 from dataclasses import dataclass, field, asdict
 
 from .zipnative import build_zip, manifest_line, merge_manifest
@@ -119,7 +120,7 @@ def alloc_key(taken, seed, lo=0xE000, hi=0xFFEF):
     return k
 
 
-def generate_sql(project, db_path):
+def generate_sql(project, db_path, sections=None):
     """Returns (sql_text, string_lines). Cars are cloned from their donor inside the game DB."""
     db = sqlite3.connect("file:%s?mode=ro" % db_path.replace("\\", "/"), uri=True)
     car_cols = [r[1] for r in db.execute("pragma table_info(Data_Car)")]
@@ -138,6 +139,7 @@ def generate_sql(project, db_path):
     sql, strings = [], []
     taken_car, taken_make = set(), set()
     for c in project.cars:
+        section_start = len(sql)
         row = db.execute("select Id, MakeID from Data_Car where MediaName=? collate nocase", (c.donor,)).fetchone()
         if not row:
             raise ValueError("donor car %s not found in game database" % c.donor)
@@ -192,6 +194,8 @@ def generate_sql(project, db_path):
         if c.extra_sql.strip():
             sql.append(c.extra_sql.strip())
         sql.append("")
+        if sections is not None:
+            sections[str(c.car_id)] = "\n".join(sql[section_start:]) + "\n"
     db.close()
     return "\n".join(sql), strings
 
@@ -246,7 +250,8 @@ def _retarget(blob, donor, media):
 def build_pack(project, mount, out_dir):
     """Writes <out_dir>\\mediapc\\cars\\*.zip and <out_dir>\\CarPacks\\<name>\\*; returns metadata."""
     media = os.path.join(mount, "media")
-    sql, strings = generate_sql(project, os.path.join(media, "stripped", "gamedbRC.slt"))
+    sections = {}
+    sql, strings = generate_sql(project, os.path.join(media, "stripped", "gamedbRC.slt"), sections)
     cars_dir = os.path.join(out_dir, "mediapc", "cars")
     os.makedirs(cars_dir, exist_ok=True)
     lines = {}
@@ -266,7 +271,7 @@ def build_pack(project, mount, out_dir):
     with open(os.path.join(pdir, "strings.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(strings) + "\n")
     meta = {"name": project.name, "version": project.version, "author": project.author,
-            "description": project.description, "manifest_lines": lines,
+            "description": project.description, "manifest_lines": lines, "car_sql": sections,
             "cars": [{"media": c.media, "id": c.car_id, "name": c.name} for c in project.cars]}
     with open(os.path.join(pdir, "pack.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
@@ -328,3 +333,100 @@ def installed_packs(mods_dir):
                 with open(mj, encoding="utf-8") as f:
                     out.append(json.load(f))
     return out
+
+
+def uninstall_car(pack_name, car_id, mount, mods_dir):
+    """Remove one CPS-installed custom car, never a base-game database row."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", pack_name):
+        raise ValueError("Invalid pack folder name")
+    base = os.path.join(mount, "media", "stripped", "gamedbRC.slt")
+    with closing(sqlite3.connect("file:%s?mode=ro" % base.replace("\\", "/"), uri=True)) as db:
+        if db.execute("SELECT 1 FROM Data_Car WHERE Id=?", (car_id,)).fetchone():
+            raise ValueError("Base-game cars cannot be uninstalled. Only custom pack cars can be removed.")
+        tables = []
+        for (table,) in db.execute("SELECT name FROM sqlite_master WHERE type='table'"):
+            cols = [row[1] for row in db.execute('PRAGMA table_info("%s")' % table.replace('"', '""'))]
+            key = "Ordinal" if table.startswith("List_Upgrade") and "Ordinal" in cols else next(
+                (col for col in cols if table in KEYED_TABLES and col.lower() == "carid"), None)
+            if key:
+                tables.append((table, key))
+    folder = os.path.join(mods_dir, "CarPacks", pack_name)
+    meta_path, sql_path = os.path.join(folder, "pack.json"), os.path.join(folder, "pack.sql")
+    with open(meta_path, encoding="utf-8") as f:
+        meta = json.load(f)
+    target = next((car for car in meta["cars"] if car["id"] == car_id), None)
+    if target is None:
+        raise ValueError("Car ID %d is not installed in pack '%s'." % (car_id, pack_name))
+    for other in installed_packs(mods_dir):
+        if other["name"] != pack_name and any(car["id"] == car_id for car in other.get("cars", [])):
+            raise ValueError("Car ID %d is also provided by '%s'. Resolve the duplicate ID before uninstalling." %
+                             (car_id, other["name"]))
+    with open(sql_path, encoding="utf-8-sig") as f:
+        sql = f.read()
+    sections = meta.get("car_sql")
+    if sections is None:
+        # Older CPS packs have one generated comment header per car, in metadata order.
+        starts = []
+        for car in meta["cars"]:
+            pattern = r"(?m)^-- " + re.escape(car["name"]) + r" \(" + re.escape(car["media"]) + r"\) cloned from [^\r\n]+\r?$"
+            matches = list(re.finditer(pattern, sql))
+            if len(matches) != 1:
+                raise ValueError("This legacy pack cannot be split safely. Rebuild/install it with this version first.")
+            starts.append(matches[0].start())
+        if starts != sorted(starts) or (starts and sql[:starts[0]].strip()):
+            raise ValueError("Legacy pack SQL layout differs from generated CPS output. Rebuild/install the pack first.")
+        sections = {str(car["id"]): sql[start:end] for car, start, end in
+                    zip(meta["cars"], starts, starts[1:] + [len(sql)])}
+    remaining = [car for car in meta["cars"] if car["id"] != car_id]
+    new_sql = "\n".join(sections[str(car["id"])] for car in remaining)
+    meta["cars"] = remaining
+    meta["car_sql"] = {str(car["id"]): sections[str(car["id"])] for car in remaining}
+    removed_path = ("game:\\media\\cars\\%s.zip" % target["media"]).lower()
+    meta["manifest_lines"] = {key: value for key, value in meta.get("manifest_lines", {}).items()
+                              if key.lower() != removed_path}
+    # Keep recoverable backups of the installed pack's previous metadata/SQL.
+    shutil.copy2(sql_path, sql_path + ".bak")
+    shutil.copy2(meta_path, meta_path + ".bak")
+    with open(sql_path + ".tmp", "w", encoding="utf-8") as f:
+        f.write(new_sql)
+    with open(meta_path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+    manifest_path = os.path.join(mount, "mediapc", "zipmanifest.xml")
+    manifest_before = None
+    if os.path.isfile(manifest_path):
+        with open(manifest_path, "rb") as f:
+            manifest_before = f.read()
+    try:
+        with ExitStack() as stack:
+            for surface in ("mediaoverride", "mediapc"):
+                path = os.path.join(mount, surface, "stripped", "gamedbRC.slt")
+                if not os.path.isfile(path):
+                    continue
+                if os.path.samefile(base, path):
+                    raise ValueError("Override database points to the base database; refusing to modify it.")
+                db = stack.enter_context(closing(sqlite3.connect(path)))
+                stack.enter_context(db)
+                db.execute("BEGIN IMMEDIATE")
+                existing = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                for table, key in tables:
+                    if table in existing:
+                        db.execute('DELETE FROM "%s" WHERE "%s"=?' %
+                                   (table.replace('"', '""'), key), (car_id,))
+                db.execute("DELETE FROM Data_Car WHERE Id=?", (car_id,))
+            os.replace(sql_path + ".tmp", sql_path)
+            os.replace(meta_path + ".tmp", meta_path)
+            _rebuild_manifest(mount, os.path.join(mods_dir, "CarPacks"))
+    except (OSError, ValueError, sqlite3.Error):
+        shutil.copy2(sql_path + ".bak", sql_path)
+        shutil.copy2(meta_path + ".bak", meta_path)
+        if manifest_before is not None:
+            with open(manifest_path, "wb") as f:
+                f.write(manifest_before)
+        elif os.path.isfile(manifest_path):
+            os.remove(manifest_path)
+        raise
+    finally:
+        for path in (sql_path + ".tmp", meta_path + ".tmp"):
+            if os.path.isfile(path):
+                os.remove(path)
+    return target

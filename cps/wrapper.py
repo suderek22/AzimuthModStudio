@@ -1,13 +1,17 @@
 """Wrapper tab: embeds the running game, telemetry overlay and console."""
 import os
+import re
+import shlex
+import sqlite3
 import time
 
-from PySide6.QtCore import Qt, QTimer, QThread, Signal, QRectF, QEvent
-from PySide6.QtGui import QColor, QPainter, QPen, QFont, QTextCursor
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit,
-                               QLineEdit, QSplitter, QCheckBox, QStackedLayout, QApplication)
+from PySide6.QtCore import Qt, QTimer, QThread, Signal, QRectF
+from PySide6.QtGui import QColor, QPainter, QPen, QFont
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+                               QSplitter, QCheckBox, QStackedLayout, QApplication)
 
 from . import theme
+from .console import Console, ConsoleWindow
 from .overlay import TelemetryOverlay
 from .runtime import Runtime, user32, WS_CHILD, WS_VISIBLE, GWL_STYLE, send_key
 
@@ -54,65 +58,24 @@ class GameContainer(QWidget):
 
 class Poller(QThread):
     data = Signal(object)
+    swap_data = Signal(object)
 
     def __init__(self, rt):
         super().__init__()
         self.rt = rt
         self.alive = True
+        self.swap_target = None
 
     def run(self):
+        next_swap_poll = 0
         while self.alive:
             self.data.emit(self.rt.telemetry() if self.rt.running() else None)
+            target = self.swap_target
+            if target is not None and self.rt.running() and time.monotonic() >= next_swap_poll:
+                reply = self.rt.command("CarPackStudio car status")
+                self.swap_data.emit((target, reply))
+                next_swap_poll = time.monotonic() + 1
             time.sleep(0.1)
-
-
-class Console(QWidget):
-    submit = Signal(str)
-
-    def __init__(self):
-        super().__init__()
-        self.out = QPlainTextEdit()
-        self.out.setReadOnly(True)
-        self.out.setMaximumBlockCount(5000)
-        self.inp = QLineEdit()
-        self.inp.setPlaceholderText("Console – type a mod command (try: list) and press Enter")
-        self.inp.returnPressed.connect(self._enter)
-        self.inp.installEventFilter(self)
-        self.hist, self.hi = [], 0
-        self.draft = ""
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
-        lay.addWidget(self.out)
-        lay.addWidget(self.inp)
-
-    def write(self, text, color=None):
-        c = self.out.textCursor()
-        c.movePosition(QTextCursor.End)
-        self.out.setTextCursor(c)
-        html = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        self.out.appendHtml('<span style="color:%s;white-space:pre">%s</span>' % (color or theme.FG, html))
-
-    def _enter(self):
-        t = self.inp.text().strip()
-        if t:
-            self.hist.append(t)
-            self.hi = len(self.hist)
-            self.draft = ""
-            self.write("> " + t, theme.ACCENT)
-            self.submit.emit(t)
-        self.inp.clear()
-
-    def eventFilter(self, obj, event):
-        if obj is self.inp and event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Up, Qt.Key_Down):
-            if self.hist:
-                if self.hi == len(self.hist):
-                    self.draft = self.inp.text()
-                step = -1 if event.key() == Qt.Key_Up else 1
-                self.hi = max(0, min(len(self.hist), self.hi + step))
-                self.inp.setText(self.hist[self.hi] if self.hi < len(self.hist) else self.draft)
-            return True
-        return super().eventFilter(obj, event)
 
 
 class WrapperTab(QWidget):
@@ -129,18 +92,30 @@ class WrapperTab(QWidget):
         self.car = None
         self.active_car = None
         self.car_title_cb = None
+        self.swap_target = None
+        self.swap_previous_id = None
+        self.swap_started = 0
+        self.swap_timed_out = False
         self.embedded = False
         self.detached = False
         self.launch_t = 0
         self.last_enter = 0
         self.log_pos = {}
         self.driving = False
+        self.debug_targets = set()
+        self.log_pending = {}
+        self.console_window = None
+        self.console_sizes = [620, 160]
 
         self.run_btn = QPushButton("▶ Run")
         self.run_btn.setObjectName("primary")
         self.run_btn.clicked.connect(self.start)
         self.stop_btn = QPushButton("■ Stop")
         self.stop_btn.clicked.connect(self.stop)
+        self.recover_btn = QPushButton("Recover previous car")
+        self.recover_btn.setToolTip("After a stalled swap, restart in the previous car at the normal spawn point.")
+        self.recover_btn.clicked.connect(self.recover_swap)
+        self.recover_btn.hide()
         self.detach_btn = QPushButton("⧉ Detach")
         self.detach_btn.clicked.connect(self.toggle_detach)
         self.boot = QCheckBox("Skip title screen")
@@ -155,11 +130,18 @@ class WrapperTab(QWidget):
         self.state.setStyleSheet("color:%s;" % theme.FG_DIM)
         bar = QHBoxLayout()
         bar.setContentsMargins(6, 4, 6, 4)
-        for w in (self.run_btn, self.stop_btn, self.detach_btn, self.boot, self.show_overlay, self.show_fps,
-                  self.car_lbl):
+        bar.setSpacing(10)
+        for checkbox in (self.boot, self.show_overlay, self.show_fps):
+            checkbox.setStyleSheet("QCheckBox { spacing:6px; }")
+        for w in (self.run_btn, self.stop_btn, self.recover_btn, self.detach_btn, self.boot, self.show_overlay, self.show_fps):
             bar.addWidget(w)
         bar.addStretch()
-        bar.addWidget(self.state)
+        details = QHBoxLayout()
+        details.setContentsMargins(6, 2, 6, 6)
+        details.setSpacing(16)
+        self.car_lbl.setWordWrap(True)
+        details.addWidget(self.car_lbl, 1)
+        details.addWidget(self.state)
 
         self.container = GameContainer()
         self.placeholder = QLabel("Press ▶ Run to start the game inside the tool.\n"
@@ -180,14 +162,17 @@ class WrapperTab(QWidget):
         split.addWidget(self.console)
         split.setSizes([620, 160])
         split.setStretchFactor(0, 1)
+        self.console_split = split
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addLayout(bar)
+        lay.addLayout(details)
         lay.addWidget(split)
 
         self.poller = Poller(self.rt)
         self.poller.data.connect(self.on_telemetry)
+        self.poller.swap_data.connect(self.on_swap_status)
         self.poller.start()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
@@ -225,6 +210,7 @@ class WrapperTab(QWidget):
                 self.prepare_cb(self.console.write)
             self.rt.prepare(lambda m: self.console.write(m, theme.ORANGE))
             self.log_pos = {k: (os.path.getsize(v) if os.path.exists(v) else 0) for k, v in self.rt.log_files().items()}
+            self.log_pending.clear()
             self.rt.launch()
         except Exception as ex:
             self.console.write("Cannot start: %s" % ex, theme.RED)
@@ -241,6 +227,7 @@ class WrapperTab(QWidget):
         if self.embedded:
             self.container.child = None
         self.rt.stop()
+        self._clear_swap()
         self.embedded = False
         self._show_placeholder(True)
         self.state.setText("Stopped")
@@ -287,8 +274,10 @@ class WrapperTab(QWidget):
                 if code not in (0, None):
                     self._critical_exit(code)
                 self.rt.proc = None
+                self._clear_swap()
         if running:
             self._pump_logs()
+            self._check_swap_timeout()
         self.overlay.follow(self.embedded and self.show_overlay.isChecked())
 
     def on_telemetry(self, t):
@@ -302,10 +291,12 @@ class WrapperTab(QWidget):
                 if self.driving:
                     self.console.write("car changed: %s" % media, theme.GREEN)
                 self.active_car = media
-            self.state.setText("Driving: %s" % media)
+            if self.swap_target is None:
+                self.state.setText("Driving: %s" % media)
         if t and t.get("valid") and not self.driving:
             self.driving = True
-            self.state.setText("Driving: %s" % t.get("car", ""))
+            if self.swap_target is None:
+                self.state.setText("Driving: %s" % t.get("car", ""))
             self.console.write("in game – telemetry live", theme.GREEN)
 
     def _pump_logs(self):
@@ -316,23 +307,100 @@ class WrapperTab(QWidget):
             pos = self.log_pos.get(key, 0)
             if size < pos:
                 pos = 0
+                self.log_pending.pop(key, None)
             if size > pos:
                 with open(path, "rb") as f:
                     f.seek(pos)
                     chunk = f.read(min(size - pos, 65536)).decode("utf-8", "replace")
                 self.log_pos[key] = pos + min(size - pos, 65536)
-                for line in chunk.splitlines():
-                    if key == "azimuth" and "local save" in line:
-                        continue
-                    if key == "critical":
-                        self.console.write(line, theme.RED)
-                    elif key == "extraoptions":
-                        bad = any(w in line.lower() for w in ("refused", "error", "fail", "cannot", "invalid"))
-                        self.console.write("[ExtraOptions] " + line, theme.RED if bad else theme.FG_DIM)
-                    elif any(w in line.lower() for w in ("error", "fail", "crash")):
-                        self.console.write("[%s] %s" % (key, line), theme.ORANGE)
-                    elif key == "platform":
-                        self.console.write(line, theme.FG_DIM)
+                chunk = self.log_pending.pop(key, "") + chunk
+                lines = chunk.split("\n")
+                self.log_pending[key] = lines.pop()
+                for line in lines:
+                    self._log_line(key, line.rstrip("\r"))
+
+    def _log_line(self, key, line):
+        if re.search(r"\[CarPackStudio\]\s+command:\s+car status\s*$", line, re.I):
+            return
+        match = re.search(r"\[([^\]]+)\]", line)
+        resource = match.group(1) if key == "platform" and match else {
+            "azimuth": "Azimuth", "extraoptions": "ExtraOptions", "critical": "CarPackStudio"
+        }.get(key, "Platform")
+        bad = any(word in line.lower() for word in ("error", "fail", "crash", "cannot", "invalid", "refused"))
+        if self.debug_targets and resource.casefold() not in self.debug_targets and not bad and key != "critical":
+            return
+        if key == "azimuth" and "azimuth" not in self.debug_targets and not bad:
+            return
+        text = line if key == "platform" else "[%s] %s" % (resource, line)
+        self.console.write(text, theme.RED if key == "critical" else theme.ORANGE if bad else theme.FG_DIM,
+                           resource=resource)
+
+    def set_console_detached(self, detached):
+        if detached:
+            if self.console_window is None:
+                self.console_sizes = self.console_split.sizes()
+                self.console_window = ConsoleWindow(self.window())
+                self.console_window.setWindowTitle("Car Pack Studio - Console")
+                self.console_window.setMinimumSize(640, 400)
+                self.console_window.setSizeGripEnabled(True)
+                self.console_window.attach_requested.connect(lambda: self.set_console_detached(False))
+                layout = QVBoxLayout(self.console_window)
+                layout.setContentsMargins(0, 0, 0, 0)
+                layout.addWidget(self.console)
+                self.console_window.resize(1000, 700)
+            self.console_window.show()
+            self.console_window.raise_()
+        elif self.console_window is not None:
+            window, self.console_window = self.console_window, None
+            self.console_split.addWidget(self.console)
+            self.console.show()
+            self.console_split.setSizes(self.console_sizes)
+            window.hide()
+            window.deleteLater()
+
+    def _console_command(self, line):
+        first = line.split(None, 1)[0].lower() if line else ""
+        if first not in ("filter", "debug", "console"):
+            return False
+        try:
+            parts = shlex.split(line)
+            if first == "console":
+                if len(parts) != 2 or parts[1] not in ("0", "1"):
+                    raise ValueError("usage: console 1 (detach) | console 0 (attach)")
+                self.set_console_detached(parts[1] == "1")
+                self.console.notice("Console " + ("detached" if parts[1] == "1" else "attached"))
+            elif first == "filter":
+                if len(parts) == 2 and parts[1].lower() == "remove":
+                    self.console.set_filters([])
+                elif len(parts) == 3 and parts[1].lower() in ("text", "resource", "-text", "-resource") and parts[2]:
+                    kind = parts[1].lower()
+                    rule = (kind.lstrip("-"), parts[2], kind.startswith("-"))
+                    if rule not in self.console.filters:
+                        self.console.set_filters(self.console.filters + [rule])
+                else:
+                    raise ValueError('usage: filter [-]text "match" | filter [-]resource "name" | filter remove')
+                self.console.notice("%d active filters" % len(self.console.filters))
+            else:
+                target = " ".join(parts[1:]).strip()
+                if not target:
+                    raise ValueError('usage: debug Azimuth | debug "mod name" | debug off')
+                if target.lower() == "off":
+                    self.debug_targets.clear()
+                    self.console.notice("Debug log streaming disabled.")
+                else:
+                    session = self.rt.session() or {}
+                    names = {name.casefold(): name for name in session.get("mods", {})}
+                    names.update({"azimuth": "Azimuth", "extraoptions": "ExtraOptions"})
+                    if target.casefold() not in names:
+                        raise ValueError("Unknown log source '%s'. Available: %s" % (target, ", ".join(sorted(names.values()))))
+                    self.debug_targets.add(target.casefold())
+                    self.console.notice("Debug %s: streaming selected sources plus errors and critical messages. "
+                                        "Available live log lines only. Thread calls, responses "
+                                        "and pipeline internals are shown only if the source logs them; no native "
+                                        "thread/function tracing is enabled. Console filters still apply." % names[target.casefold()])
+        except ValueError as ex:
+            self.console.notice("error: %s" % ex, theme.RED)
+        return True
 
     def _critical_exit(self, code):
         msg = "CRITICAL: game process exited with code 0x%08X" % (code & 0xFFFFFFFF)
@@ -345,20 +413,104 @@ class WrapperTab(QWidget):
 
     def on_command(self, line):
         if line in ("help", "?"):
-            self.console.write("Commands go to the FH2 Mod Platform as '<mod> <command>'. Studio shortcuts: "
+            self.console.notice("Commands go to the FH2 Mod Platform as '<mod> <command>'. Studio shortcuts: "
                                "time <h>, freeze <0|1>, weather <atm> <rain> <env>|off, status, recover <0|1>, "
-                               "car <id>, car status, echo <text>. Up/Down recalls session commands. "
+                               "car recover (restart in previous car), car force (restart in swap target), "
+                               "car <id>, car status, car details, echo <text>. Up/Down recalls session commands. "
+                               'filter [-]text "match", filter [-]resource "name", filter remove; '
+                               'debug Azimuth|"<mod name>"|off; console 1 (detach), console 0 (attach). '
                                "'list' shows everything.", theme.FG_DIM)
             return
         self.send(line, echo=False)
 
     def send(self, line, echo=True):
-        first = line.split(" ", 1)[0].lower()
+        line = line.strip()
+        if self._console_command(line):
+            return
+        first = line.split(None, 1)[0].lower() if line else ""
         if first in STUDIO_COMMANDS:
             line = "CarPackStudio " + line
         if echo:
-            self.console.write("> " + line, theme.ACCENT)
-        self.console.write(self.rt.command(line))
+            self.console.notice("> " + line, theme.ACCENT)
+        parts = line.split()
+        command = [part.lower() for part in parts]
+        if command in (["carpackstudio", "car", "recover"], ["carpackstudio", "car", "force"]):
+            self._restart_swap_car(command[-1] == "force")
+            return
+        is_swap = (len(parts) == 3 and parts[0].lower() == "carpackstudio" and
+                   parts[1].lower() == "car" and parts[2].isascii() and parts[2].isdigit())
+        previous_id = None
+        if is_swap and self.active_car:
+            try:
+                previous_id = self.rt.car_id(self.active_car)
+            except (OSError, sqlite3.Error) as ex:
+                self.console.write("Cannot resolve previous car for recovery: %s" % ex, theme.RED)
+        reply = self.rt.command(line)
+        self.console.notice(reply, theme.RED if reply.startswith("error:") else None)
+        if is_swap and reply.startswith("swapping to car ") and reply[16:].isdigit():
+            self.swap_target = int(reply[16:])
+            self.swap_previous_id = previous_id
+            self.swap_started = time.monotonic()
+            self.swap_timed_out = False
+            self.recover_btn.hide()
+            self.poller.swap_target = self.swap_target
+            self.state.setText("Swapping to ID %d..." % self.swap_target)
+            if previous_id is None:
+                self.console.write("Previous car ID unavailable; timeout recovery will require Stop/Run.", theme.ORANGE)
+
+    def _clear_swap(self):
+        self.swap_target = None
+        self.swap_previous_id = None
+        self.swap_timed_out = False
+        self.poller.swap_target = None
+        self.recover_btn.hide()
+
+    def _check_swap_timeout(self):
+        if self.swap_target is None or self.swap_timed_out or time.monotonic() - self.swap_started < 60:
+            return
+        self.swap_timed_out = True
+        self.state.setText("Swap to ID %d timed out" % self.swap_target)
+        self.recover_btn.setVisible(self.swap_previous_id is not None)
+        self.console.write("ERROR: swap to ID %d has not completed after 60 seconds. "
+                           "Use 'car details' to inspect the native stage. %s" %
+                           (self.swap_target, "Recover previous car restarts the wrapper at the normal spawn point."
+                            if self.swap_previous_id is not None else "Stop/Run the wrapper to recover."), theme.RED)
+
+    def on_swap_status(self, result):
+        target, reply = result
+        if target != self.swap_target:
+            return
+        if reply == "complete %d" % target:
+            self.console.write("Swap to ID %d completed." % target, theme.GREEN)
+            self._clear_swap()
+        elif reply == "failed %d" % target:
+            self.console.write("ERROR: swap to ID %d failed. Use 'car details' for diagnostics." % target, theme.RED)
+            self.poller.swap_target = None
+            self.swap_timed_out = True
+            self.recover_btn.setVisible(self.swap_previous_id is not None)
+            self.state.setText("Car swap failed")
+
+    def recover_swap(self):
+        if not self.swap_timed_out or self.swap_previous_id is None:
+            self.console.write("Recovery unavailable: no timed-out swap with a known previous car.", theme.RED)
+            return
+        self._restart_swap_car(False)
+
+    def _restart_swap_car(self, use_target):
+        if self.swap_target is None or not self.rt.running():
+            self.console.write("error: recovery requires an active car swap in a running wrapper.", theme.RED)
+            return
+        car_id = self.swap_target if use_target else self.swap_previous_id
+        if car_id is None:
+            self.console.write("error: previous car ID is unknown; use 'car force' to restart in the target "
+                               "car, or Stop/Run.", theme.RED)
+            return
+        self.console.write("Recovering: restarting in %s car ID %d at the normal spawn point; "
+                           "the incomplete native load will not be forced to finish." %
+                           ("target" if use_target else "previous", car_id), theme.ORANGE)
+        self.forced_car = car_id
+        self.rt.last_car = car_id
+        self.restart()
 
     def restart(self):
         """Switch car: the next launch starts in rt.last_car (only the save's LastUsedGarageId changes)."""
@@ -369,6 +521,7 @@ class WrapperTab(QWidget):
         QTimer.singleShot(1500, self.start)
 
     def shutdown(self):
+        self.set_console_detached(False)
         self.poller.alive = False
         self.poller.wait(1000)
         if self.rt.running() and self.embedded:

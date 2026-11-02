@@ -1,11 +1,13 @@
 """Car Pack Studio main window."""
 import os
+import ctypes
 import shutil
+import sqlite3
 import sys
 import zipfile
 
 from PySide6.QtCore import Qt, QSortFilterProxyModel, QTimer
-from PySide6.QtGui import QAction, QStandardItem, QStandardItemModel, QColor, QFont
+from PySide6.QtGui import QAction, QStandardItem, QStandardItemModel, QColor, QFont, QIcon
 from PySide6.QtWidgets import (QApplication, QMainWindow, QTabWidget, QDockWidget, QTreeView, QWidget, QVBoxLayout,
                                QHBoxLayout, QLineEdit, QLabel, QPushButton, QFileDialog, QMessageBox, QInputDialog,
                                QMenu, QComboBox, QSpinBox, QFormLayout, QTableWidget, QTableWidgetItem, QPlainTextEdit,
@@ -17,11 +19,12 @@ from .editors import TextEditorTab
 from .diagnose import check_pack, scan_logs
 from .gamedata import GameData
 from .pack import (Project, PackCar, build_pack, install_pack, uninstall_pack, installed_packs, generate_sql,
-                   import_car_archive, car_archive_path)
+                   import_car_archive, car_archive_path, uninstall_car)
 from .viewers import SwatchViewer, ModelViewer, install_gl_format
 from .wrapper import WrapperTab
-
-TEXT_EXT = (".xml", ".xaml", ".txt", ".log", ".ini", ".sql", ".json")
+from .assets import TEXT_EXT, FILE_FILTER
+from .filetools import BinaryViewer, GameFilesManager
+from .audioviewer import BankViewer
 
 CREDITS = """
 <h2>Credits</h2>
@@ -38,9 +41,25 @@ CREDITS = """
 cloning knowledge this tool is based on.</li>
 <li><b>ForzaTech Studio</b> – inspiration for the model / swatchbin viewers; its <code>xg.dll</code> detiling library is used
 for texture decoding.</li>
+<li><b>SatNav Voice Pack Creator</b> – FSB5 bank parsing and XMA wrapping approach used for audio preview/export.</li>
+<li><b>FFmpeg</b> – bundled audio decoder, GPLv3-or-later; see bin/ffmpeg-license.txt.
+Original build information is available with <code>bin\\ffmpeg.exe -version</code>.</li>
 <li><b>Qt for Python (PySide6)</b>, <b>NumPy</b>, <b>PyOpenGL</b>, <b>texture2ddecoder</b>, <b>Pillow</b>.</li>
 </ul>
-<p>Game files are NOT included. You must own Forza Horizon 2 and point the tool to your game's <code>Mount</code> folder.</p>
+<p>Game content (apart from the application icon below) is NOT included.
+You must own Forza Horizon 2 and point the tool to your game's <code>Mount</code> folder.</p>
+<p>The application icon is an exported BarnFindWorking texture from the user's game, stored as
+<code>resources/app-icon.png</code> and multi-size <code>resources/app.ico</code> for executable packaging.
+No other game assets are bundled.</p>
+<p><b>Tools → Game files manager</b> browses mounted loose files and ZIP contents.
+Supported assets open in the same tabs as car Explorer files; <b>Open file from disk</b> uses the same readers.
+Swatchbins offer PNG export of the original decoded texture. Banks list their embedded samples, with
+<b>Play</b>, <b>Stop</b> and <b>Export WAV</b>. PCM16, mono/stereo XMA and MPEG are supported;
+event-only banks and unsupported codecs report an error rather than writing invalid audio.</p>
+<p>Binary inspection is read-only: material/shader bundles show blob metadata; PSO/VSO files show DXBC
+chunks; FH2 carbin files show scene headers and references; lights.bin shows attachments and light transforms.
+AVPINS opens as XML. Physics definitions and LDFB light presets provide raw header values, strings and
+paged bytes, not a semantic collision/preset editor. Unverified fields are explicitly left undecoded.</p>
 <p><b>Wrapper → Time &amp; Weather</b> controls the live test environment.
 <b>Wrapper → Car → Animations</b> lists the active car's animation clips and requests their states.
 Playable states are read directly from the car's active GSF graph.
@@ -52,10 +71,36 @@ Requests and faults appear in the wrapper console.</p>
 <p>Experimental live reload: once in free roam, enter <code>car 363</code> in the wrapper console.
 The native fast-travel loading/arrival sequence reloads the car at the same position.
 Use <code>car status</code> to check completion. Radio-left is reserved for reload during these test sessions.
+<code>car details</code> reports the source/target, reload stage, native streaming-job state and elapsed time.
+The console logs load progress every five seconds and reports a 60-second timeout without forcing
+an unfinished load to resume. After a timeout, stop/run the wrapper if loading does not recover.
+The <b>Recover previous car</b> button appears after 60 seconds. It restarts in the previous car
+at the normal spawn point, not at the exact pre-swap position. Recovery is never automatic.
+In the wrapper console, <code>car recover</code> immediately restarts in the previous car, and
+<code>car force</code> immediately restarts in the requested target car, even before the timeout.
+Neither command skips an unfinished native load. <code>recover 0/1</code> still toggles crash recovery.
 Unknown car IDs are rejected against the active game database without starting a reload.
 Up/Down in the console recalls commands from this CPS session.
 The wrapper's car label follows live telemetry, including swaps through Extra Options.
-Test in game continues to restart the wrapper to rebuild/install project assets.</p>
+Test in game sends the selected car ID to a running wrapper without restarting it.
+If the wrapper is stopped, it builds/installs the project and launches normally.
+New or changed pack assets require stopping and running the wrapper again.</p>
+<p><b>Console:</b> scrolling up pauses auto-follow; <b>Latest</b> resumes it.
+Repeated <code>[CarPackStudio] command: car status</code> polling lines are hidden from the console.
+Use <code>filter text "example"</code> or <code>filter resource "CarPackStudio"</code> to include matching logs;
+<code>filter -text "example"</code> and <code>filter -resource "CarPackStudio"</code> exclude matches.
+Matching is case-insensitive. Includes are OR within a field, AND between fields; exclusions always win.
+<code>filter remove</code> clears all filters. The <b>Filters</b> button manages the same rules and turns green
+when any are active; changes also refilter the last 5,000 retained entries. Command feedback stays visible.</p>
+<p><code>debug Azimuth</code> or <code>debug "mod name"</code> streams selected sources' available live logs,
+plus errors/critical messages from other sources (console filters still apply).
+Repeat to add sources; <code>debug off</code> restores normal logging.
+This does not instrument native thread/function calls: threads, responses and pipeline details are shown only
+when the source logs them.
+<code>console 1</code> detaches the console and <code>console 0</code> reattaches it.
+Tools → Console detach / Console attach provides the same actions. Closing the separate console reattaches it,
+preserving history, filters, input and output. The detached console opens at 1000 × 700
+and can be resized, with a 640 × 400 minimum.</p>
 <p><b>Pack → Import car ZIP</b> adds an asset archive to the current pack. Select a database/physics donor,
 then edit the imported car's name, brand and ID in Car properties. The original ZIP is copied into the project
 and used instead of the donor's assets. Renaming requires the same number of characters as the ZIP name.</p>
@@ -145,7 +190,7 @@ class CarBrowser(QWidget):
         self.search.setPlaceholderText("Search brand / name / media name…")
         self.search.textChanged.connect(self._filter)
         self.model = QStandardItemModel(0, 4)
-        self.model.setHorizontalHeaderLabels(["Car", "Media", "Source", "ID"])
+        self.model.setHorizontalHeaderLabels(["ID", "Car", "Media", "Source"])
         self.proxy = QSortFilterProxyModel()
         self.proxy.setSourceModel(self.model)
         self.proxy.setFilterCaseSensitivity(Qt.CaseInsensitive)
@@ -155,7 +200,8 @@ class CarBrowser(QWidget):
         self.tree.setSortingEnabled(True)
         self.tree.setRootIsDecorated(False)
         self.tree.header().setStretchLastSection(False)
-        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.tree.header().setSectionResizeMode(1, QHeaderView.Stretch)
         self.tree.doubleClicked.connect(lambda i: self.owner.open_car(self.car_at(i)))
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._menu)
@@ -180,9 +226,10 @@ class CarBrowser(QWidget):
                 s.setForeground(QColor(theme.GREEN))
             cid = QStandardItem()
             cid.setData(c.id, Qt.DisplayRole)
+            cid.setData(c, Qt.UserRole)
             for item in (it, m, s, cid):
                 item.setEditable(False)
-            self.model.appendRow([it, m, s, cid])
+            self.model.appendRow([cid, it, m, s])
         self.count.setText("%d cars" % len(cars))
 
     def _filter(self, t):
@@ -426,6 +473,8 @@ class MainWindow(QMainWindow):
         self.pack_list = QListWidget()
         self.pack_list.itemDoubleClicked.connect(self._pack_item_open)
         self.pack_list.currentRowChanged.connect(self._pack_selected)
+        self.pack_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.pack_list.customContextMenuRequested.connect(self._pack_menu)
         self.output = QPlainTextEdit()
         self.output.setReadOnly(True)
 
@@ -502,9 +551,13 @@ class MainWindow(QMainWindow):
         self.animations_menu = car.addMenu("&Animations")
         self.animations_menu.aboutToShow.connect(self._animation_menu)
         t = mb.addMenu("&Tools")
+        t.addAction(QAction("Game files manager", self, triggered=self.open_game_files_manager))
+        t.addAction(QAction("Console detach", self, triggered=lambda: self.wrapper.set_console_detached(True)))
+        t.addAction(QAction("Console attach", self, triggered=lambda: self.wrapper.set_console_detached(False)))
         t.addAction(QAction("Open file from disk…", self, triggered=self.open_disk_file))
         t.addAction(QAction("Open game logs (platform.log)", self, triggered=self.open_platform_log))
         h = mb.addMenu("&Help")
+        h.addAction(QAction("How to", self, triggered=self.how_to))
         h.addAction(QAction("Credits", self, triggered=self.credits))
         h.addAction(QAction("About", self, triggered=lambda: QMessageBox.about(
             self, APP_NAME, "%s %s\nBuild car packs for Forza Horizon 2 (Azimuth)." % (APP_NAME, APP_VERSION))))
@@ -613,9 +666,83 @@ class MainWindow(QMainWindow):
 
     def remove_car(self):
         r = self.pack_list.currentRow()
-        if self.project and r >= 0:
-            del self.project.cars[r]
-            self.project_changed()
+        if not self.project or not 0 <= r < len(self.project.cars):
+            return
+        car = self.project.cars[r]
+        if QMessageBox.question(self, "Remove car from pack",
+                                "Remove %s (ID %d) from this project?\n\n"
+                                "Open tabs for this car will close, discarding unsaved edits. "
+                                "Source/override files stay on disk. Installed copies are unchanged." %
+                                (car.name, car.car_id), QMessageBox.Yes | QMessageBox.No,
+                                QMessageBox.No) != QMessageBox.Yes:
+            return
+        for i in range(self.tabs.count() - 1, 0, -1):
+            widget = self.tabs.widget(i)
+            entry = widget.property("entry")
+            if entry and entry[0] == car.media:
+                self.tabs.removeTab(i)
+                if isinstance(widget, BankViewer):
+                    widget.shutdown()
+                widget.deleteLater()
+        if self.current and self.current.get("pack") is car:
+            self.current = None
+            if self.zip:
+                self.zip.close()
+                self.zip = None
+            self.explorer.entries = []
+            self.explorer.car = None
+            self.explorer.title.setText("No car open")
+            self.explorer.refill()
+        del self.project.cars[r]
+        self.project_changed()
+        self.log("Removed %s from project; installed copies and source files were kept." % car.media)
+
+    def _pack_menu(self, pos):
+        item = self.pack_list.itemAt(pos)
+        if item is None or self.project is None:
+            return
+        self.pack_list.setCurrentItem(item)
+        menu = QMenu(self)
+        menu.addAction("Remove car from pack...", self.remove_car)
+        menu.addAction("Uninstall car from game database...", self.uninstall_selected_car)
+        menu.exec(self.pack_list.viewport().mapToGlobal(pos))
+
+    def uninstall_selected_car(self):
+        row = self.pack_list.currentRow()
+        if not self.project or not 0 <= row < len(self.project.cars):
+            return
+        if self.wrapper.rt.running():
+            QMessageBox.warning(self, APP_NAME, "Stop the wrapper before uninstalling cars from the game database.")
+            return
+        car = self.project.cars[row]
+        try:
+            packs = [pack for pack in installed_packs(self._mods_dir())
+                     if any(entry["id"] == car.car_id and entry["media"].casefold() == car.media.casefold()
+                            for entry in pack.get("cars", []))]
+            if not packs:
+                QMessageBox.information(self, APP_NAME, "This car is not installed in the selected runtime.")
+                return
+            name = packs[0]["name"]
+            if len(packs) > 1:
+                name, ok = QInputDialog.getItem(self, "Installed pack", "Uninstall from:", [p["name"] for p in packs],
+                                               0, False)
+                if not ok:
+                    return
+            if QMessageBox.question(self, "Uninstall car",
+                                    "Uninstall %s (ID %d) from '%s'?\n\n"
+                                    "Close any other game instances first. Other pack cars and the base database "
+                                    "are preserved. The car stays in this project; Install or Test in game will "
+                                    "install it again. Changes take effect on the next launch." %
+                                    (car.name, car.car_id, name), QMessageBox.Yes | QMessageBox.No,
+                                    QMessageBox.No) != QMessageBox.Yes:
+                return
+            uninstall_car(name, car.car_id, self.s["mount"], self._mods_dir())
+        except (OSError, ValueError, KeyError, sqlite3.Error) as ex:
+            QMessageBox.critical(self, "Cannot uninstall car", str(ex))
+            return
+        self.log("Uninstalled car ID %d (%s) from %s. Project retained; reinstalling the pack restores it." %
+                 (car.car_id, car.media, name))
+        self.statusBar().showMessage("Car uninstalled from the game database", 5000)
 
     # ----------------------------------------------------------- cars
     def _car_title(self, media):
@@ -778,19 +905,12 @@ class MainWindow(QMainWindow):
         except KeyError:
             return
         short = name.rsplit("/", 1)[-1]
-        low = name.lower()
-        if low.endswith(".swatchbin"):
-            w = SwatchViewer(name, data)
-        elif low.endswith(".modelbin"):
-            w = ModelViewer(name, data)
-        elif low.endswith(TEXT_EXT):
-            text = data.decode("utf-8-sig", "replace")
-            w = TextEditorTab(name, text, save_cb=self._save_text,
-                              hint="" if self.current["pack"] else "read-only until the car is added to the pack")
-        else:
-            w = TextEditorTab(name, self._hex(data), kind="txt")
-            w.editor.setReadOnly(True)
-            w.save_btn.setEnabled(False)
+        try:
+            w = self._asset_widget(name, data, self._save_text,
+                                   "" if self.current["pack"] else "read-only until the car is added to the pack")
+        except (OSError, ValueError) as ex:
+            QMessageBox.warning(self, "Cannot open asset", "%s\n%s" % (name, ex))
+            return
         w.setProperty("entry", (self.current["media"], name))
         i = self.tabs.addTab(w, short)
         self.tabs.setTabToolTip(i, name)
@@ -850,17 +970,82 @@ class MainWindow(QMainWindow):
         self.explorer.refill()
 
     def open_disk_file(self):
-        p, _ = QFileDialog.getOpenFileName(self, "Open file", "", "Text files (*.xml *.txt *.log *.ini *.xaml *.sql *.json);;All files (*)")
+        p, _ = QFileDialog.getOpenFileName(self, "Open file", self.s.get("mount", ""), FILE_FILTER)
         if p:
-            with open(p, "rb") as f:
-                text = f.read().decode("utf-8-sig", "replace")
+            if p.lower().endswith(".zip"):
+                manager = self.open_game_files_manager()
+                manager.load_archive(p)
+            else:
+                self.open_asset_path(p)
 
-            def save(_n, t, path=p):
-                with open(path, "w", encoding="utf-8") as fh:
-                    fh.write(t)
-            w = TextEditorTab(os.path.basename(p), text, save_cb=save)
-            i = self.tabs.addTab(w, os.path.basename(p))
-            self.tabs.setCurrentIndex(i)
+    @staticmethod
+    def _asset_widget(name, data, save_cb=None, hint=""):
+        low = name.lower()
+        if low.endswith(".swatchbin"):
+            return SwatchViewer(name, data)
+        if low.endswith(".modelbin"):
+            return ModelViewer(name, data)
+        if low.endswith(".bank"):
+            return BankViewer(name, data)
+        if low.endswith(TEXT_EXT) and not data.startswith(b"LDFB"):
+            if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+                text = data.decode("utf-16")
+            elif b"\0" in data[:1024]:
+                return BinaryViewer(name, data)
+            else:
+                text = data.decode("utf-8-sig", "replace")
+            widget = TextEditorTab(name, text, kind="xml" if low.endswith(".avpins") else None,
+                                   save_cb=save_cb, hint=hint)
+            if save_cb is None:
+                widget.editor.setReadOnly(True)
+                widget.save_btn.setEnabled(False)
+            return widget
+        return BinaryViewer(name, data)
+
+    def open_game_files_manager(self):
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            if isinstance(widget, GameFilesManager):
+                widget.set_root(self.s.get("mount", ""))
+                self.tabs.setCurrentIndex(i)
+                return widget
+        widget = GameFilesManager(self.s.get("mount", ""))
+        widget.open_requested.connect(self.open_asset_path)
+        self.tabs.setCurrentIndex(self.tabs.addTab(widget, "Game files manager"))
+        return widget
+
+    def open_asset_path(self, path, entry=None):
+        key = (os.path.normcase(os.path.abspath(path)), entry)
+        for i in range(self.tabs.count()):
+            if self.tabs.widget(i).property("asset_path") == key:
+                self.tabs.setCurrentIndex(i)
+                return
+        try:
+            if entry is not None:
+                with zipfile.ZipFile(path) as archive:
+                    data = archive.read(entry)
+                name = entry
+                save = None
+            else:
+                with open(path, "rb") as f:
+                    data = f.read()
+                name = os.path.basename(path)
+
+                def save(_name, text):
+                    try:
+                        with open(path, "w", encoding="utf-8") as f:
+                            f.write(text)
+                    except OSError as ex:
+                        QMessageBox.critical(self, "Cannot save file", str(ex))
+                        raise
+            widget = self._asset_widget(name, data, save, "archive entry (read-only)" if entry else "on-disk file")
+        except (OSError, ValueError, KeyError, zipfile.BadZipFile) as ex:
+            QMessageBox.warning(self, "Cannot open asset", "%s%s\n%s" % (path, " :: " + entry if entry else "", ex))
+            return
+        widget.setProperty("asset_path", key)
+        i = self.tabs.addTab(widget, name.replace("\\", "/").rsplit("/", 1)[-1])
+        self.tabs.setTabToolTip(i, path + (" :: " + entry if entry else ""))
+        self.tabs.setCurrentIndex(i)
 
     def open_platform_log(self):
         p = self.wrapper.rt.log_files()["platform"]
@@ -880,6 +1065,8 @@ class MainWindow(QMainWindow):
             if QMessageBox.question(self, APP_NAME, "Discard unsaved changes?") != QMessageBox.Yes:
                 return
         self.tabs.removeTab(i)
+        if isinstance(w, BankViewer):
+            w.shutdown()
         w.deleteLater()
 
     # ----------------------------------------------------------- pack
@@ -992,10 +1179,10 @@ class MainWindow(QMainWindow):
     def _test_car(self, media, name, car_id):
         w = self.wrapper
         w.set_car(media, name)
-        w.forced_car = car_id   # the generated save starts in this car (only LastUsedGarageId changes)
         if w.rt.running():
-            w.restart()   # the console command `car <id>` swaps live but is still experimental (camera/HUD/audio not re-attached)
+            w.send("car %d" % car_id)
         else:
+            w.forced_car = car_id
             w.start()
 
     def _animation_menu(self):
@@ -1145,7 +1332,34 @@ class MainWindow(QMainWindow):
         d.resize(620, 520)
         d.exec()
 
+    def how_to(self):
+        path = os.path.join(config.ROOT, "resources", "how-to.html")
+        try:
+            with open(path, encoding="utf-8") as f:
+                guide = f.read()
+        except OSError as ex:
+            QMessageBox.critical(self, "How to", "Cannot read the bundled guide:\n%s" % ex)
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("How to - Car Pack Studio 0.1.0 Experimental")
+        dialog.resize(1000, 780)
+        dialog.setMinimumSize(640, 480)
+        dialog.setSizeGripEnabled(True)
+        layout = QVBoxLayout(dialog)
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(True)
+        browser.setHtml(guide)
+        layout.addWidget(browser)
+        close = QPushButton("Close")
+        close.clicked.connect(dialog.accept)
+        layout.addWidget(close)
+        dialog.exec()
+
     def closeEvent(self, e):
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            if isinstance(widget, BankViewer):
+                widget.shutdown()
         self.wrapper.shutdown()
         config.save(self.s)
         super().closeEvent(e)
@@ -1153,8 +1367,13 @@ class MainWindow(QMainWindow):
 
 def main():
     install_gl_format()
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("CarPackStudio.Desktop")
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+    icon = QIcon(os.path.join(config.ROOT, "resources", "app.ico"))
+    if icon.isNull():
+        raise FileNotFoundError("Bundled resources\\app.ico is missing or invalid")
+    app.setWindowIcon(icon)
     theme.apply(app)
     w = MainWindow()
     w.show()

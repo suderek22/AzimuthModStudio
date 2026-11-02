@@ -6,10 +6,12 @@ import os
 import re
 import shutil
 import struct
+import sqlite3
 import subprocess
 import time
 import urllib.request
 from ctypes import wintypes
+from contextlib import closing
 
 from . import config
 
@@ -315,6 +317,16 @@ class Runtime:
                 return json.loads(r.read().decode("utf-8", "replace"))
         except Exception:
             return None
+
+    def car_id(self, media):
+        """Resolve the current car from the active database, including installed pack cars."""
+        for layer in ("mediaoverride", "mediapc", "media"):
+            path = os.path.join(self.mount, layer, "stripped", "gamedbRC.slt")
+            if os.path.isfile(path):
+                with closing(sqlite3.connect("file:%s?mode=ro" % path.replace("\\", "/"), uri=True)) as db:
+                    row = db.execute("SELECT Id FROM Data_Car WHERE MediaName=? COLLATE NOCASE", (media,)).fetchone()
+                return row[0] if row else None
+        raise FileNotFoundError("Cannot find the active game database")
 
     def session(self):
         try:

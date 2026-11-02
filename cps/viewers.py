@@ -1,6 +1,7 @@
 """Swatchbin viewer and 3D model viewer."""
 import hashlib
 import math
+import os
 
 import numpy as np
 from PySide6.QtCore import Qt, QPointF, Signal
@@ -97,6 +98,9 @@ class SwatchViewer(QWidget):
             self.chk[ch] = c
             top.addWidget(c)
         b = QPushButton("Export PNG…")
+        b.setEnabled(self.tex is not None)
+        if self.err:
+            b.setToolTip("PNG export requires a successfully decoded texture.")
         b.clicked.connect(self.export_png)
         top.addWidget(b)
         b2 = QPushButton("Fit")
@@ -131,11 +135,17 @@ class SwatchViewer(QWidget):
         self.canvas.set_image(img.copy())
 
     def export_png(self):
-        p, _ = QFileDialog.getSaveFileName(self, "Export PNG", self.name.rsplit("/", 1)[-1].replace(".swatchbin", ".png"),
+        if self.err:
+            QMessageBox.warning(self, "Export PNG", "Cannot export an undecoded texture: " + self.err)
+            return
+        filename = os.path.splitext(self.name.replace("\\", "/").rsplit("/", 1)[-1])[0] + ".png"
+        p, _ = QFileDialog.getSaveFileName(self, "Export PNG", filename,
                                            "PNG (*.png)")
         if p:
-            QImage(self._buf.data, self._buf.shape[1], self._buf.shape[0], self._buf.shape[1] * 4,
-                   QImage.Format_RGBA8888).save(p)
+            rgba = np.ascontiguousarray(self.rgba)
+            if not QImage(rgba.data, rgba.shape[1], rgba.shape[0], rgba.shape[1] * 4,
+                          QImage.Format_RGBA8888).save(p, "PNG"):
+                QMessageBox.warning(self, "Export PNG", "Cannot write PNG to " + p)
 
 
 # --------------------------------------------------------------------------- 3D

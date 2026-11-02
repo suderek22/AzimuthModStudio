@@ -1,9 +1,10 @@
 import json
 import os
+import sys
 
 APPDATA = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "CarPackStudio")
 SETTINGS = os.path.join(APPDATA, "settings.json")
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 DEFAULTS = {
     "mount": "",
