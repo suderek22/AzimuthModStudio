@@ -1,0 +1,492 @@
+// CarPackStudio - test-bench mod for the Car Pack Studio wrapper (FH2 Mod Platform 2.8.0).
+// Not shipped with car packs. Provides: crash guard (critical log instead of a dead game),
+// title-screen skip, time-of-day / weather control and wrapper console commands.
+// Time and weather offsets follow conner-mcvay/fh2-mods tools/weather-menu/FH2WeatherMenu.cs.
+#include "fh2mod.h"
+#include <windows.h>
+#include <string>
+#include <atomic>
+#include <cstdio>
+#include <cstdarg>
+#include <cstring>
+
+static const FH2ModApi* g_api;
+static FH2Mod* g_mod;
+static std::wstring g_dir, g_logPath;
+static std::atomic<int> g_crashCount{0};
+static bool g_recover = true;
+static int g_maxRecover = 25;
+static CRITICAL_SECTION g_cs;
+
+static void Log(const char* fmt, ...) {
+    char buf[1024];
+    va_list va; va_start(va, fmt); vsnprintf(buf, sizeof buf, fmt, va); va_end(va);
+    if (g_api && g_mod) g_api->log(g_mod, buf);
+}
+
+// ---------------------------------------------------------------- crash guard
+static void CriticalLog(const char* text) {
+    EnterCriticalSection(&g_cs);
+    HANDLE h = CreateFileW(g_logPath.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_ALWAYS, 0, 0);
+    if (h != INVALID_HANDLE_VALUE) {
+        DWORD w; WriteFile(h, text, (DWORD)strlen(text), &w, 0); CloseHandle(h);
+    }
+    LeaveCriticalSection(&g_cs);
+}
+
+static LONG CALLBACK VectoredHandler(EXCEPTION_POINTERS* ep) {
+    DWORD code = ep->ExceptionRecord->ExceptionCode;
+    bool fatal = code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_ILLEGAL_INSTRUCTION ||
+                 code == EXCEPTION_INT_DIVIDE_BY_ZERO || code == EXCEPTION_PRIV_INSTRUCTION ||
+                 code == EXCEPTION_STACK_OVERFLOW || code == EXCEPTION_IN_PAGE_ERROR ||
+                 code == EXCEPTION_ARRAY_BOUNDS_EXCEEDED;
+    if (!fatal) return EXCEPTION_CONTINUE_SEARCH;
+    static thread_local bool inHandler = false;
+    if (inHandler) return EXCEPTION_CONTINUE_SEARCH;
+    inHandler = true;
+
+    CONTEXT* c = ep->ContextRecord;
+    HMODULE mod = 0; char modName[MAX_PATH] = "?";
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       (LPCSTR)ep->ExceptionRecord->ExceptionAddress, &mod);
+    if (mod) GetModuleFileNameA(mod, modName, MAX_PATH);
+    unsigned long long rva = (unsigned long long)((char*)ep->ExceptionRecord->ExceptionAddress - (char*)mod);
+    SYSTEMTIME st; GetLocalTime(&st);
+    char buf[2048];
+    int n = snprintf(buf, sizeof buf,
+        "[%04d-%02d-%02d %02d:%02d:%02d] CRITICAL ERROR 0x%08lX at %p (%s+0x%llX) thread %lu\r\n"
+        "  rax=%016llX rcx=%016llX rdx=%016llX rbx=%016llX rsp=%016llX rbp=%016llX\r\n"
+        "  rsi=%016llX rdi=%016llX r8=%016llX r9=%016llX rip=%016llX\r\n",
+        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, code,
+        ep->ExceptionRecord->ExceptionAddress, modName, rva, GetCurrentThreadId(),
+        c->Rax, c->Rcx, c->Rdx, c->Rbx, c->Rsp, c->Rbp, c->Rsi, c->Rdi, c->R8, c->R9, c->Rip);
+    if (code == EXCEPTION_ACCESS_VIOLATION && ep->ExceptionRecord->NumberParameters >= 2)
+        n += snprintf(buf + n, sizeof buf - n, "  access violation: %s address %p\r\n",
+                      ep->ExceptionRecord->ExceptionInformation[0] ? "write" : "read",
+                      (void*)ep->ExceptionRecord->ExceptionInformation[1]);
+
+    int count = ++g_crashCount;
+    bool recover = g_recover && count <= g_maxRecover && code != EXCEPTION_STACK_OVERFLOW;
+    if (recover) {
+        // Unwind one frame: behave as if the faulting function returned 0 to its caller.
+        DWORD64 imageBase = 0, ctrl = 0;
+        RUNTIME_FUNCTION* rf = RtlLookupFunctionEntry(c->Rip, &imageBase, nullptr);
+        if (rf) {
+            PVOID handlerData = nullptr;
+            CONTEXT copy = *c;
+            RtlVirtualUnwind(UNW_FLAG_NHANDLER, imageBase, copy.Rip, rf, &copy, &handlerData, &ctrl, nullptr);
+            copy.Rax = 0;
+            *c = copy;
+            n += snprintf(buf + n, sizeof buf - n, "  recovered (#%d): frame unwound, returning to %p\r\n", count, (void*)c->Rip);
+        } else {
+            recover = false;
+            n += snprintf(buf + n, sizeof buf - n, "  no unwind info: cannot recover\r\n");
+        }
+    } else {
+        n += snprintf(buf + n, sizeof buf - n, "  not recovered (limit/mode); handing over to platform crash report\r\n");
+    }
+    CriticalLog(buf);
+    Log("critical error 0x%08lX at %s+0x%llX (%s)", code, modName, rva, recover ? "recovered" : "fatal");
+    inHandler = false;
+    return recover ? EXCEPTION_CONTINUE_EXECUTION : EXCEPTION_CONTINUE_SEARCH;
+}
+
+// ---------------------------------------------------------------- memory helpers
+// ReadProcessMemory/WriteProcessMemory fail with an error code instead of raising an exception,
+// so the crash guard never sees our own probing.
+static bool Rd(uintptr_t a, void* out, size_t n) {
+    SIZE_T got = 0;
+    return ReadProcessMemory(GetCurrentProcess(), (LPCVOID)a, out, n, &got) && got == n;
+}
+static bool Wr(uintptr_t a, const void* in, size_t n) {
+    SIZE_T put = 0;
+    return WriteProcessMemory(GetCurrentProcess(), (LPVOID)a, in, n, &put) && put == n;
+}
+static bool Ptr(uintptr_t a, uintptr_t* out) {
+    uintptr_t p = 0;
+    if (!Rd(a, &p, 8) || p < 0x10000 || p > 0x7fffffffffffULL) return false;
+    *out = p;
+    return true;
+}
+static uintptr_t GameBase() { return (uintptr_t)g_api->wait_for_code(10); }
+
+// ---------------------------------------------------------------- time and weather
+struct World { uintptr_t clock, weather; };
+
+static bool Signature(uintptr_t base, uintptr_t rva, const unsigned char* bytes, size_t n) {
+    unsigned char buf[8];
+    return Rd(base + rva, buf, n) && !memcmp(buf, bytes, n);
+}
+
+static const char* GetWorld(World* w) {
+    uintptr_t base = GameBase();
+    if (!base) return "game code is not ready";
+    static const unsigned char s1[] = {0x48,0x8b,0x81,0x98,0,0,0,0xc3}, s2[] = {0x48,0x8b,0x81,0x80,4,0,0,0xc3},
+                               s3[] = {0x48,0x8b,0x81,0x88,4,0,0,0xc3};
+    if (!Signature(base, 0x2e1520, s1, 8) || !Signature(base, 0x2e1f90, s2, 8) || !Signature(base, 0x2e2e90, s3, 8))
+        return "unsupported game build";
+    uintptr_t a, b, ctx;
+    if (!Ptr(base + 0x34aba60, &a) || !Ptr(a + 0x48, &b) || !Ptr(b + 0x98, &ctx) ||
+        !Ptr(ctx + 0x480, &w->clock) || !Ptr(ctx + 0x488, &w->weather))
+        return "not in free roam yet";
+    float sec = 0;
+    if (!Rd(w->clock + 0x10, &sec, 4) || !(sec >= -1 && sec <= 86401)) return "unexpected clock state";
+    return nullptr;
+}
+
+static std::atomic<bool> g_hold{false};
+static std::atomic<float> g_wa{0}, g_wr{0}, g_we{0};
+static bool g_savedWeather = false;
+static unsigned char g_origFlags[3];
+
+static bool PutWeather(const World& w, float atm, float rain, float env) {
+    const unsigned char one = 1;
+    bool ok = true;
+    ok &= Wr(w.weather + 0xf4, &atm, 4);  ok &= Wr(w.weather + 0xf0, &one, 1);
+    ok &= Wr(w.weather + 0x104, &rain, 4); ok &= Wr(w.weather + 0x100, &one, 1);
+    ok &= Wr(w.weather + 0xfc, &env, 4);  ok &= Wr(w.weather + 0xf8, &one, 1);
+    float zero = 0;
+    ok &= Wr(w.weather + 8, &atm, 4); ok &= Wr(w.weather + 0x10, &zero, 4);
+    ok &= Wr(w.weather + 0x5c, &rain, 4); ok &= Wr(w.weather + 0x18, &env, 4);
+    return ok;
+}
+
+static DWORD WINAPI HoldThread(LPVOID) {
+    for (;;) {
+        Sleep(150);
+        if (!g_hold) continue;
+        World w;
+        if (!GetWorld(&w)) PutWeather(w, g_wa, g_wr, g_we);
+    }
+}
+
+static void Reply(char* reply, size_t size, const char* fmt, ...) {
+    va_list va; va_start(va, fmt); vsnprintf(reply, size, fmt, va); va_end(va);
+}
+
+static void CmdTime(const char* args, char* reply, size_t size) {
+    World w;
+    if (const char* e = GetWorld(&w)) return Reply(reply, size, "error: %s", e);
+    float h;
+    if (sscanf_s(args, "%f", &h) != 1) {
+        float s; Rd(w.clock + 0x10, &s, 4);
+        return Reply(reply, size, "time %02d:%02d", (int)(s / 3600), (int)((int)s % 3600 / 60));
+    }
+    if (h < 0 || h >= 24) return Reply(reply, size, "error: hours must be 0..24");
+    float sec = h * 3600; unsigned char zero = 0;
+    bool ok = Wr(w.clock + 0x10, &sec, 4) && Wr(w.clock + 0xc, &sec, 4) && Wr(w.clock + 0x361, &zero, 1);
+    Reply(reply, size, ok ? "time set to %.2f h" : "error: write failed", h);
+}
+
+static void CmdFreeze(const char* args, char* reply, size_t size) {
+    World w;
+    if (const char* e = GetWorld(&w)) return Reply(reply, size, "error: %s", e);
+    unsigned char f = atoi(args) ? 1 : 0;
+    Reply(reply, size, Wr(w.clock + 0x24, &f, 1) ? (f ? "time frozen" : "time running") : "error: write failed");
+}
+
+static void CmdWeather(const char* args, char* reply, size_t size) {
+    World w;
+    if (const char* e = GetWorld(&w)) return Reply(reply, size, "error: %s", e);
+    if (!strncmp(args, "off", 3)) {
+        g_hold = false;
+        if (g_savedWeather) {
+            Wr(w.weather + 0xf0, &g_origFlags[0], 1); Wr(w.weather + 0xf8, &g_origFlags[1], 1);
+            Wr(w.weather + 0x100, &g_origFlags[2], 1);
+        }
+        return Reply(reply, size, "weather override released");
+    }
+    float a, r, e;
+    if (sscanf_s(args, "%f %f %f", &a, &r, &e) != 3 || a < 0 || a > 100 || r < 0 || r > 100 || e < 0 || e > 100)
+        return Reply(reply, size, "usage: weather <atmosphere 0-100> <rain 0-100> <environment 0-100> | weather off");
+    if (!g_savedWeather) {
+        Rd(w.weather + 0xf0, &g_origFlags[0], 1); Rd(w.weather + 0xf8, &g_origFlags[1], 1);
+        Rd(w.weather + 0x100, &g_origFlags[2], 1);
+        g_savedWeather = true;
+    }
+    g_wa = a / 100; g_wr = r / 100; g_we = e / 100;
+    bool ok = PutWeather(w, g_wa, g_wr, g_we);
+    g_hold = ok;
+    Reply(reply, size, ok ? "weather set (atmosphere %.0f rain %.0f environment %.0f), held" : "error: write failed", a, r, e);
+}
+
+// ---------------------------------------------------------------- boot
+// Title-screen skip experiment: captures the title scene (Splash, ctor rva 0xe774e0) and calls
+// its A-button handler (rva 0xcec3d0) with the pad code the scene's input map actually knows (0x12).
+typedef unsigned char (*ButtonFn)(void* self, unsigned code, unsigned char down);
+typedef void* (*CtorFn)(void* self);
+static const uintptr_t RVA_SPLASH_CTOR = 0xe774e0, RVA_SPLASH_BUTTON = 0xcec3d0, RVA_SPLASH_SLOT = 0x2e53940;
+static const unsigned PAD_A = 0x2d;   // the code Splash::OnButton tests for "accept"
+static std::atomic<void*> g_splash{nullptr};
+static CtorFn g_origCtor;
+static ButtonFn g_origButtonSlot;
+static int g_bootDelay = 2000;
+static bool g_autoStart = true;
+
+// A usable title scene has a non-null node list head at +0x2c0 whose first node is readable.
+static bool SceneReady(void* s, uintptr_t* head, uintptr_t* first) {
+    uintptr_t h = 0, f = 0;
+    if (!Ptr((uintptr_t)s + 0x2c0, &h) || !Ptr(h, &f)) return false;
+    *head = h; *first = f;
+    return true;
+}
+
+static void* SplashCtorHook(void* self) {
+    void* r = g_origCtor(self);
+    g_splash = self;
+    uintptr_t base = GameBase(), vt = 0, h = 0, f = 0;
+    Ptr((uintptr_t)self, &vt);
+    Log("boot: title scene constructed (%p) vtable=game+0x%llx ready=%d", self,
+        (unsigned long long)(vt - base), (int)SceneReady(self, &h, &f));
+    return r;
+}
+static unsigned char SplashButtonHook(void* self, unsigned code, unsigned char down) {
+    g_splash = self;
+    Log("boot: game sent button code=0x%x down=%d to scene %p", code, down, self);
+    return g_origButtonSlot(self, code, down);
+}
+static LONG BootFilter(EXCEPTION_POINTERS* ep, uintptr_t base) {
+    Log("boot: fault rip=game+0x%llx rcx=%p", (unsigned long long)(ep->ContextRecord->Rip - base), (void*)ep->ContextRecord->Rcx);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+static bool PressStart(void* splash, uintptr_t base, unsigned char* result) {
+    __try {
+        *result = ((ButtonFn)(base + RVA_SPLASH_BUTTON))(splash, PAD_A, 1);
+        return true;
+    } __except (BootFilter(GetExceptionInformation(), base)) { return false; }
+}
+static DWORD WINAPI BootThread(LPVOID) {
+    void* b = g_api->wait_for_code(180000);
+    if (!b) { Log("boot: game code not ready, title skip disabled"); return 0; }
+    uintptr_t base = (uintptr_t)b;
+    FH2Hook* h1 = g_api->hook_function(g_mod, "Splash::Splash", (void*)(base + RVA_SPLASH_CTOR), (void*)SplashCtorHook, (void**)&g_origCtor);
+    FH2Hook* h2 = g_api->hook_pointer(g_mod, "Splash::OnButton", (void**)(base + RVA_SPLASH_SLOT), (void*)SplashButtonHook, (void**)&g_origButtonSlot);
+    if (h1 || h2) g_api->enable_hooks(g_mod, nullptr);
+    Log("boot: title hooks ctor=%d button=%d", h1 != nullptr, h2 != nullptr);
+    DWORD t0 = GetTickCount(), seenAt = 0;
+    int tries = 0;
+    while (GetTickCount() - t0 < 600000 && tries < 3) {
+        Sleep(250);
+        void* s = g_splash;
+        if (!s) continue;
+        if (!seenAt) seenAt = GetTickCount();
+        if ((int)(GetTickCount() - seenAt) < g_bootDelay) continue;
+        uintptr_t h, f;
+        if (!SceneReady(s, &h, &f)) {
+            // the scene is torn down once the title screen has been accepted
+            if (tries) { Log("boot: title scene %p released, title screen left", s); break; }
+            Log("boot: scene %p not ready (list head missing)", s); Sleep(1000); continue;
+        }
+        unsigned char res = 0;
+        bool ok = PressStart(s, base, &res);
+        Log("boot: start request #%d ok=%d result=%d", ++tries, ok, res);
+        if (ok && res) { Log("boot: left the title screen"); break; }
+        Sleep(1500);
+    }
+    return 0;
+}
+
+// ---------------------------------------------------------------- car choice override
+// States::SetPlayerCarChoice (vtable rva 0x2d21710, execute 0x921a60) fetches the player-car-choice object
+// through the singleton at rva 0x327270 -> [+0x48] -> [+0x100] and calls its slot 0x1b8 with the car id.
+// Hooking that slot forces any car id (owned or not) into every choice the game makes.
+typedef void (*ChoiceFn)(void* self, int id);
+static const uintptr_t RVA_SINGLETON_PTR = 0x34b3e18;
+static ChoiceFn g_origChoice;
+static std::atomic<int> g_forceCar{-1};
+
+static void ChoiceHook(void* self, int id) {
+    Log("car: choice set by game id=%d", id);
+    g_origChoice(self, id);
+}
+static bool VSlot(uintptr_t obj, uintptr_t slot, uintptr_t* fn) {
+    uintptr_t vt;
+    return Ptr(obj, &vt) && Ptr(vt + slot, fn);
+}
+// Walks singleton -> [+0x48] -> [+0x100] by calling the game's own virtuals; reads only, no state change.
+static void* FindChoiceObject(uintptr_t base) {
+    typedef void* (*Fn)(void*);
+    uintptr_t s = 0, f48 = 0, f100 = 0;
+    if (!Ptr(base + RVA_SINGLETON_PTR, &s) || !VSlot(s, 0x48, &f48)) return nullptr;
+    void* a = ((Fn)f48)((void*)s);
+    if (!a || !VSlot((uintptr_t)a, 0x100, &f100)) return nullptr;
+    return ((Fn)f100)(a);
+}
+// Player-car lifecycle: execute functions of States::LoadPlayerCar / UnloadPlayerCar / SetPlayerCarChoice.
+// On load, the player's choice object (same class as the spawn config above) holds the car id at +8.
+typedef uintptr_t (*StateFn)(void* self);
+static StateFn g_origLoad, g_origUnload, g_origSetChoice;
+static std::atomic<bool> g_haveLoad{false};
+static std::atomic<int> g_swapPending{-1};
+static DWORD g_stateTid = 0;
+static const uintptr_t RVA_LOAD_CAR = 0x8ae8e0, RVA_UNLOAD_CAR = 0x946af0, RVA_SETCHOICE = 0x921a60;
+
+static bool ReadChoiceId(int* id, uintptr_t* objOut) {
+    uintptr_t base = GameBase(), obj = 0;
+    *id = -1;
+    __try { obj = (uintptr_t)FindChoiceObject(base); } __except (EXCEPTION_EXECUTE_HANDLER) { obj = 0; }
+    if (!obj) return false;
+    *objOut = obj;
+    return Rd(obj + 8, id, 4);
+}
+static uintptr_t LoadHook(void* self) {
+    int id; uintptr_t obj = 0;
+    bool ok = ReadChoiceId(&id, &obj);
+    Log("car: LoadPlayerCar choice=%p id=%d force=%d thread=%lu", (void*)obj, ok ? id : -1, g_forceCar.load(), GetCurrentThreadId());
+    if (ok && g_forceCar >= 0 && id != g_forceCar) {
+        int v = g_forceCar;
+        __try { g_origChoice((void*)obj, v); Log("car: LoadPlayerCar id %d -> %d via setter", id, v); }
+        __except (EXCEPTION_EXECUTE_HANDLER) { Log("car: setter faulted for id %d", v); }
+    }
+    g_forceCar = -1;   // only the first load is forced; later menu swaps stay untouched
+    g_stateTid = GetCurrentThreadId();
+    g_haveLoad = true;
+    return g_origLoad(self);
+}
+static uintptr_t UnloadHook(void* self) {
+    Log("car: UnloadPlayerCar");
+    return g_origUnload(self);
+}
+static uintptr_t SetChoiceHook(void* self) {
+    int id; uintptr_t obj = 0;
+    bool ok = ReadChoiceId(&id, &obj);
+    Log("car: SetPlayerCarChoice before id=%d", ok ? id : -1);
+    uintptr_t r = g_origSetChoice(self);
+    ok = ReadChoiceId(&id, &obj);
+    Log("car: SetPlayerCarChoice after id=%d", ok ? id : -1);
+    return r;
+}
+typedef uintptr_t (*Fn4)(void*, void*, void*, void*);
+static Fn4 g_origWorld;
+static std::atomic<int> g_padInject{-1}, g_padFrames{0}, g_swapAction{12};
+
+// Live swap: put the car into the player's choice object, then press the input that the studio's patched pause
+// stateflow (radio_left_flow, see runtime.py) maps to the game's own reload flow. Runs on the state thread.
+static bool SetChoiceAndPress(int id) {
+    uintptr_t obj = 0;
+    int before = -1;
+    __try {
+        if (!ReadChoiceId(&before, &obj)) return false;
+        g_origChoice((void*)obj, id);
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    Log("car: live swap %d -> %d, pressing action %d", before, id, g_swapAction.load());
+    g_padFrames = 3;
+    g_padInject = g_swapAction.load();
+    return true;
+}
+static uintptr_t WorldTick(void* a, void* b, void* c, void* d) {
+    uintptr_t r = g_origWorld(a, b, c, d);
+    int p = g_swapPending;
+    if (p >= 0 && g_haveLoad && __readgsdword(0x48) == g_stateTid && g_swapPending.compare_exchange_strong(p, -1))
+        SetChoiceAndPress(p);
+    return r;
+}
+// Input::WasPressed(this, action, player, flag) at rva 0x1072510. Used to log action ids and to press one on demand.
+typedef bool (*PressFn)(void*, int, int, bool);
+static PressFn g_origPressed;
+static bool PressedHook(void* self, int action, int player, bool flag) {
+    bool r = g_origPressed(self, action, player, flag);
+    static unsigned seen = 0;
+    if (r && action >= 0 && action < 32 && !(seen & (1u << action))) {
+        seen |= 1u << action;
+        Log("input: WasPressed action=%d player=%d flag=%d", action, player, (int)flag);
+    }
+    if (action == g_padInject.load() && g_padFrames.load() > 0) {
+        if (--g_padFrames <= 0) g_padInject = -1;
+        return true;
+    }
+    return r;
+}
+static DWORD WINAPI CarThread(LPVOID) {
+    void* b = g_api->wait_for_code(180000);
+    if (!b) return 0;
+    uintptr_t base = (uintptr_t)b, vt = base + 0x2c5de38;
+    g_api->hook_function(g_mod, "Input::WasPressed", (void*)(base + 0x1072510), (void*)PressedHook, (void**)&g_origPressed);
+    FH2Hook* h2 = g_api->hook_pointer(g_mod, "PlayerCarChoice::Set", (void**)(vt + 0x1b8), (void*)ChoiceHook, (void**)&g_origChoice);
+    FH2Hook* h3 = g_api->hook_function(g_mod, "LoadPlayerCar", (void*)(base + RVA_LOAD_CAR), (void*)LoadHook, (void**)&g_origLoad);
+    FH2Hook* h4 = g_api->hook_function(g_mod, "UnloadPlayerCar", (void*)(base + RVA_UNLOAD_CAR), (void*)UnloadHook, (void**)&g_origUnload);
+    FH2Hook* h5 = g_api->hook_function(g_mod, "SetPlayerCarChoice", (void*)(base + RVA_SETCHOICE), (void*)SetChoiceHook, (void**)&g_origSetChoice);
+    FH2Hook* h6 = g_api->hook_function(g_mod, "WorldTick", (void*)(base + 0x384C00), (void*)WorldTick, (void**)&g_origWorld);
+    g_api->enable_hooks(g_mod, nullptr);
+    Log("car: hooks choice=%d load=%d unload=%d setchoice=%d world=%d force=%d", h2 != nullptr, h3 != nullptr,
+        h4 != nullptr, h5 != nullptr, h6 != nullptr, g_forceCar.load());
+    return 0;
+}
+static void CmdCar(const char* args, char* reply, size_t size) {
+    int id = atoi(args);
+    if (id <= 0) { Reply(reply, size, "usage: car <car id>"); return; }
+    if (!g_haveLoad) { Reply(reply, size, "error: no player car has been loaded yet"); return; }
+    const char* sp = strchr(args, ' ');
+    if (sp && atoi(sp + 1) > 0) g_swapAction = atoi(sp + 1);   // input action mapped to the swap flow
+    g_swapPending = id;
+    Reply(reply, size, "swapping to car %d", id);
+}
+
+static void CmdPad(const char* args, char* reply, size_t size) {
+    int id = atoi(args);
+    if (id < 0 || id > 31 || !*args) { Reply(reply, size, "usage: pad <action 0-31>"); return; }
+    g_padFrames = 3;
+    g_padInject = id;
+    Reply(reply, size, "pressing action %d", id);
+}
+
+// ---------------------------------------------------------------- commands
+static void CmdHandler(void*, const char* name, const char* args, char* reply, size_t size) {
+    if (!strcmp(name, "status")) {
+        Reply(reply, size, "crashes=%d recover=%d hold_weather=%d", g_crashCount.load(), (int)g_recover, (int)g_hold);
+    } else if (!strcmp(name, "recover")) {
+        g_recover = atoi(args) != 0;
+        Reply(reply, size, g_recover ? "crash recovery on" : "crash recovery off");
+    } else if (!strcmp(name, "echo")) {
+        Reply(reply, size, "%s", args);
+    } else if (!strcmp(name, "time")) CmdTime(args, reply, size);
+    else if (!strcmp(name, "freeze")) CmdFreeze(args, reply, size);
+    else if (!strcmp(name, "weather")) CmdWeather(args, reply, size);
+    else if (!strcmp(name, "car")) CmdCar(args, reply, size);
+    else if (!strcmp(name, "pad")) CmdPad(args, reply, size);
+    else Reply(reply, size, "error: unknown command");
+}
+
+FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
+    InitializeCriticalSection(&g_cs);
+    g_api = api;
+    FH2ModInfo info = {};
+    info.size = sizeof info;
+    info.name = "CarPackStudio";
+    info.version = "1.0.0";
+    info.platform_version = "2.8.0";
+    info.description = "Car Pack Studio test bench: crash guard, title skip, time/weather, console.";
+    g_mod = api->register_mod(&info);
+    if (!g_mod) return 0;
+
+    wchar_t path[MAX_PATH];
+    HMODULE self = 0;
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       (LPCWSTR)&fh2mod_init, &self);
+    GetModuleFileNameW(self, path, MAX_PATH);
+    g_dir = path; g_dir.resize(g_dir.find_last_of(L'\\'));
+    g_logPath = g_dir + L"\\CarPackStudio-critical.log";
+
+    std::wstring ini = g_dir + L"\\CarPackStudio.ini";
+    g_recover = GetPrivateProfileIntW(L"CrashGuard", L"Recover", 1, ini.c_str()) != 0;
+    g_maxRecover = GetPrivateProfileIntW(L"CrashGuard", L"MaxRecoveries", 25, ini.c_str());
+    if (GetPrivateProfileIntW(L"CrashGuard", L"Enabled", 1, ini.c_str()))
+        AddVectoredExceptionHandler(0, VectoredHandler);
+    g_autoStart = GetPrivateProfileIntW(L"Boot", L"AutoStart", 0, ini.c_str()) != 0;
+    g_bootDelay = GetPrivateProfileIntW(L"Boot", L"DelayMs", 2000, ini.c_str());
+    g_forceCar = GetPrivateProfileIntW(L"Car", L"ForceId", -1, ini.c_str());
+    CloseHandle(CreateThread(0, 0, CarThread, 0, 0, 0));
+    if (g_autoStart) CloseHandle(CreateThread(0, 0, BootThread, 0, 0, 0));
+    CloseHandle(CreateThread(0, 0, HoldThread, 0, 0, 0));
+
+    api->add_command(g_mod, "status", "crash counters", CmdHandler, nullptr);
+    api->add_command(g_mod, "recover", "recover <0|1>: crash recovery on/off", CmdHandler, nullptr);
+    api->add_command(g_mod, "echo", "echo <text>", CmdHandler, nullptr);
+    api->add_command(g_mod, "time", "time [hours 0-24): show or set the time of day", CmdHandler, nullptr);
+    api->add_command(g_mod, "freeze", "freeze <0|1>: stop or resume the clock", CmdHandler, nullptr);
+    api->add_command(g_mod, "weather", "weather <atmosphere> <rain> <environment> (0-100) | off", CmdHandler, nullptr);
+    api->add_command(g_mod, "car", "car <id>: swap the player's car live", CmdHandler, nullptr);
+    api->add_command(g_mod, "pad", "pad <action>: press a game input action for a few frames", CmdHandler, nullptr);
+    Log("CarPackStudio ready: crash guard %s", g_recover ? "recovering" : "logging");
+    return 0;
+}
