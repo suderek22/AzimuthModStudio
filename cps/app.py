@@ -16,7 +16,8 @@ from . import APP_NAME, APP_VERSION, config, theme
 from .editors import TextEditorTab
 from .diagnose import check_pack, scan_logs
 from .gamedata import GameData
-from .pack import Project, PackCar, build_pack, install_pack, uninstall_pack, installed_packs, generate_sql
+from .pack import (Project, PackCar, build_pack, install_pack, uninstall_pack, installed_packs, generate_sql,
+                   import_car_archive, car_archive_path)
 from .viewers import SwatchViewer, ModelViewer, install_gl_format
 from .wrapper import WrapperTab
 
@@ -31,6 +32,8 @@ CREDITS = """
 (Trinculo54 and contributors, MIT licence).</li>
 <li><b>FH2 Extra Options 0.3.2</b> – by Arthur (RokkuDayo): skip-intro, media overrides, save-check bypass and more.</li>
 <li><b>Virtual Dashboard</b> – the telemetry HTTP API used by the debug overlay.</li>
+<li><b>DoorsUnlocked 0.1.5</b> – player-car lookup and animation-state playback, integrated into the CPS DLL.</li>
+<li><b>FH2NoPause 1.1.0</b> – keeps the wrapper running when it loses focus.</li>
 <li><b>FM5 import tooling</b> (FM5import / Repack-ForzaZip / SwatchbinConverter) – the zip layout and database
 cloning knowledge this tool is based on.</li>
 <li><b>ForzaTech Studio</b> – inspiration for the model / swatchbin viewers; its <code>xg.dll</code> detiling library is used
@@ -38,6 +41,24 @@ for texture decoding.</li>
 <li><b>Qt for Python (PySide6)</b>, <b>NumPy</b>, <b>PyOpenGL</b>, <b>texture2ddecoder</b>, <b>Pillow</b>.</li>
 </ul>
 <p>Game files are NOT included. You must own Forza Horizon 2 and point the tool to your game's <code>Mount</code> folder.</p>
+<p><b>Wrapper → Time &amp; Weather</b> controls the live test environment.
+<b>Wrapper → Car → Animations</b> lists the active car's animation clips and requests their states.
+Playable states are read directly from the car's active GSF graph.
+Playback selects and maintains the full-detail animation branch on the vehicle update thread,
+then waits 350 ms before sending the event, following Extra Options' roof-animation preparation.
+Clips without a matching state are listed but disabled (gauge and wiper clips are not necessarily
+independently playable states).
+Requests and faults appear in the wrapper console.</p>
+<p>Experimental live reload: once in free roam, enter <code>car 363</code> in the wrapper console.
+The native fast-travel loading/arrival sequence reloads the car at the same position.
+Use <code>car status</code> to check completion. Radio-left is reserved for reload during these test sessions.
+Unknown car IDs are rejected against the active game database without starting a reload.
+Up/Down in the console recalls commands from this CPS session.
+The wrapper's car label follows live telemetry, including swaps through Extra Options.
+Test in game continues to restart the wrapper to rebuild/install project assets.</p>
+<p><b>Pack → Import car ZIP</b> adds an asset archive to the current pack. Select a database/physics donor,
+then edit the imported car's name, brand and ID in Car properties. The original ZIP is copied into the project
+and used instead of the donor's assets. Renaming requires the same number of characters as the ZIP name.</p>
 """
 
 
@@ -123,8 +144,8 @@ class CarBrowser(QWidget):
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search brand / name / media name…")
         self.search.textChanged.connect(self._filter)
-        self.model = QStandardItemModel(0, 3)
-        self.model.setHorizontalHeaderLabels(["Car", "Media", "Source"])
+        self.model = QStandardItemModel(0, 4)
+        self.model.setHorizontalHeaderLabels(["Car", "Media", "Source", "ID"])
         self.proxy = QSortFilterProxyModel()
         self.proxy.setSourceModel(self.model)
         self.proxy.setFilterCaseSensitivity(Qt.CaseInsensitive)
@@ -157,7 +178,11 @@ class CarBrowser(QWidget):
             s = QStandardItem("MOD" if c.source == "mod" else "base")
             if c.source == "mod":
                 s.setForeground(QColor(theme.GREEN))
-            self.model.appendRow([it, m, s])
+            cid = QStandardItem()
+            cid.setData(c.id, Qt.DisplayRole)
+            for item in (it, m, s, cid):
+                item.setEditable(False)
+            self.model.appendRow([it, m, s, cid])
         self.count.setText("%d cars" % len(cars))
 
     def _filter(self, t):
@@ -391,6 +416,7 @@ class MainWindow(QMainWindow):
         self.wrapper = WrapperTab(self.s, self._prepare_for_run)
         self.wrapper.after_cb = self._after_run
         self.wrapper.car_cb = self._selected_car_id
+        self.wrapper.car_title_cb = self._car_title
         self.tabs.addTab(self.wrapper, "Wrapper")
         self.tabs.tabBar().setTabButton(0, self.tabs.tabBar().ButtonPosition.RightSide, None)
 
@@ -412,6 +438,9 @@ class MainWindow(QMainWindow):
         pl.setContentsMargins(4, 4, 4, 4)
         pl.addWidget(QLabel("Cars in this pack"))
         pl.addWidget(self.pack_list)
+        import_btn = QPushButton("Import car ZIP…")
+        import_btn.clicked.connect(self.import_car)
+        pl.addWidget(import_btn)
         bb = QHBoxLayout()
         for text, fn in (("Build", self.build), ("Install", self.install), ("Test in game", self.test_in_game)):
             b = QPushButton(text)
@@ -450,16 +479,17 @@ class MainWindow(QMainWindow):
                 a.setShortcut(sc)
             f.addAction(a)
         p = mb.addMenu("&Pack")
+        p.addAction(QAction("Import car ZIP…", self, triggered=self.import_car))
         p.addAction(QAction("Build pack", self, triggered=self.build))
         p.addAction(QAction("Install into game", self, triggered=self.install))
         p.addAction(QAction("Uninstall a pack…", self, triggered=self.uninstall))
         p.addAction(QAction("Remove selected car from pack", self, triggered=self.remove_car))
         p.addAction(QAction("Show generated SQL", self, triggered=self.show_sql))
         p.addAction(QAction("Export distributable zip…", self, triggered=self.export_zip))
-        r = mb.addMenu("&Run")
+        r = mb.addMenu("&Wrapper")
         r.addAction(QAction("Test selected car in game", self, triggered=self.test_in_game, shortcut="F5"))
         r.addAction(QAction("Stop game", self, triggered=lambda: self.wrapper.stop(), shortcut="Shift+F5"))
-        w = mb.addMenu("Time && &Weather")
+        w = r.addMenu("Time && &Weather")
         w.addAction(QAction("Time and weather…", self, triggered=self.time_weather, shortcut="Ctrl+W"))
         for text, line in (("Sunrise (06:00)", "time 6"), ("Noon (12:00)", "time 12"), ("Sunset (19:00)", "time 19"),
                            ("Midnight (00:00)", "time 0"), (None, None), ("Clear sky", "weather 0 0 0"),
@@ -468,6 +498,9 @@ class MainWindow(QMainWindow):
                 w.addSeparator()
             else:
                 w.addAction(QAction(text, self, triggered=lambda _=False, l=line: self.wrapper.send(l)))
+        car = r.addMenu("&Car")
+        self.animations_menu = car.addMenu("&Animations")
+        self.animations_menu.aboutToShow.connect(self._animation_menu)
         t = mb.addMenu("&Tools")
         t.addAction(QAction("Open file from disk…", self, triggered=self.open_disk_file))
         t.addAction(QAction("Open game logs (platform.log)", self, triggered=self.open_platform_log))
@@ -585,6 +618,67 @@ class MainWindow(QMainWindow):
             self.project_changed()
 
     # ----------------------------------------------------------- cars
+    def _car_title(self, media):
+        key = media.casefold()
+        car = next((c for c in (self.project.cars if self.project else []) if c.media.casefold() == key), None)
+        if car:
+            return "%s %s" % (car.year, car.name)
+        car = next((c for c in (self.game.cars if self.game else []) if c.media.casefold() == key), None)
+        if car:
+            return car.title
+        for pack in installed_packs(self._mods_dir()):
+            for car in pack.get("cars", []):
+                if car["media"].casefold() == key:
+                    return car["name"]
+        return media
+
+    def import_car(self):
+        if not self.game or not self.game.cars:
+            QMessageBox.warning(self, APP_NAME, "Mount the game before importing a car; a physics/database donor is required.")
+            return
+        if not self.need_project():
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Import car into pack", "", "Car archive (*.zip)")
+        if not path:
+            return
+        source = os.path.splitext(os.path.basename(path))[0]
+        cars = self.game.cars
+        labels = ["%s [%s, ID %d]" % (c.title, c.media, c.id) for c in cars]
+        default = next((i for i, c in enumerate(cars) if c.media.casefold() == source.casefold()), 0)
+        choice, ok = QInputDialog.getItem(self, "Car database donor",
+                                         "ZIPs contain assets, not database rows. Choose the physics/data donor:",
+                                         labels, default, False)
+        if not ok:
+            return
+        donor = cars[labels.index(choice)]
+        taken = {c.media.casefold() for c in cars} | {c.media.casefold() for c in self.project.cars}
+        suggested = source if source.casefold() not in taken else source[:-3] + "CPS"
+        media, ok = QInputDialog.getText(self, "Imported car", "New media name (same length as %s):" % source,
+                                        text=suggested)
+        if not ok:
+            return
+        media = media.strip()
+        if media.casefold() in taken:
+            QMessageBox.warning(self, APP_NAME, "That media name is already in use. Choose a unique name.")
+            return
+        used = {c.id for c in cars} | {c.car_id for c in self.project.cars}
+        cid = 20000
+        while cid in used:
+            cid += 1
+        car = PackCar(media=media, donor=donor.media, car_id=cid, year=donor.year,
+                      make_id=donor.make_id, name=source, short=source)
+        try:
+            import_car_archive(self.project, car, path)
+        except (OSError, ValueError, zipfile.BadZipFile, RuntimeError, NotImplementedError) as e:
+            self.log("IMPORT FAILED: %s" % e)
+            QMessageBox.warning(self, APP_NAME, "Cannot import car ZIP:\n%s" % e)
+            return
+        self.project_changed()
+        self.pack_list.setCurrentRow(len(self.project.cars) - 1)
+        self._open_packcar(car)
+        self.log("Imported %s as %s (ID %d). Edit its name, brand and physics in Car properties." %
+                 (path, media, cid))
+
     def add_clone(self, base):
         if not self.need_project():
             return
@@ -632,6 +726,7 @@ class MainWindow(QMainWindow):
         dz = os.path.join(self.s["mount"], "media", "cars", pc.donor + ".zip")
         if not os.path.exists(dz):
             dz = os.path.join(self.s["mount"], "mediapc", "cars", pc.donor + ".zip")
+        dz = car_archive_path(self.project, pc, dz)
         self._load_zip(pc.media, dz, pc, "%s %s" % (pc.year, pc.name))
         self.wrapper.set_car(pc.media, pc.name)
         self.props.show_car(pc)
@@ -902,6 +997,61 @@ class MainWindow(QMainWindow):
             w.restart()   # the console command `car <id>` swaps live but is still experimental (camera/HUD/audio not re-attached)
         else:
             w.start()
+
+    def _animation_menu(self):
+        menu = self.animations_menu
+        menu.clear()
+        telemetry = (self.wrapper.rt.telemetry() or {}) if self.wrapper.rt.running() else {}
+        media = telemetry.get("car") if telemetry.get("valid") else None
+        if not media:
+            menu.addAction("Start the wrapper and load a car first").setEnabled(False)
+            return
+        response = self.wrapper.rt.command("CarPackStudio animations") or ""
+        if response.startswith("error:") or not response:
+            menu.addAction(response or "Animation graph unavailable").setEnabled(False)
+            self.log("Animations: " + (response or "animation graph unavailable"))
+            return
+        states = set(response.splitlines())
+        car = next((c for c in self.game.cars if c.media == media), None)
+        paths = [os.path.join(self.s["mount"], d, "cars", media + ".zip")
+                 for d in ("mediaoverride", "mediapc", "media")]
+        if car:
+            paths.insert(0, car.zip_path)
+        path = next((p for p in paths if os.path.isfile(p)), None)
+        if not path:
+            menu.addAction("Car archive not found: " + media).setEnabled(False)
+            self.log("Animations: car archive not found for " + media)
+            return
+        try:
+            with zipfile.ZipFile(path) as z:
+                names = sorted(n for n in z.namelist()
+                               if n.lower().startswith("animations/") and n.lower().endswith(".gr2"))
+        except (OSError, zipfile.BadZipFile) as e:
+            menu.addAction("Cannot read animations").setEnabled(False)
+            self.log("Animations: %s" % e)
+            return
+        menu.addAction(media).setEnabled(False)
+        menu.addSeparator()
+        shown = set()
+        for name in names:
+            stem = os.path.splitext(os.path.basename(name))[0]
+            part, separator, transition = stem.rpartition("_")
+            state = part + ":" + transition if separator and transition in ("open", "close") else stem
+            action = menu.addAction(os.path.basename(name))
+            playable = state in states
+            action.setEnabled(playable)
+            action.setToolTip("Play state " + state if playable else "Clip has no independently playable state in this car's GSF")
+            action.triggered.connect(lambda _=False, s=state: self.wrapper.send("animation " + s))
+            if playable:
+                shown.add(state)
+        remaining = states - shown
+        if remaining:
+            menu.addSeparator()
+            for state in sorted(remaining):
+                action = menu.addAction(state)
+                action.triggered.connect(lambda _=False, s=state: self.wrapper.send("animation " + s))
+        if not names:
+            menu.addAction("No animation clips in this car archive").setEnabled(False)
 
     def time_weather(self):
         dlg = QDialog(self)

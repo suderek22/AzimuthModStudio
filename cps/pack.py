@@ -28,6 +28,7 @@ class PackCar:
     thumbnail: str = ""
     sql_overrides: dict = field(default_factory=dict)   # Data_Car column -> value
     extra_sql: str = ""
+    source_zip: str = ""       # project-relative imported archive; empty for donor clones
 
     def folder(self, project_dir):
         return os.path.join(project_dir, "cars", self.media)
@@ -66,6 +67,44 @@ class Project:
 
 def q(s):
     return "'" + str(s).replace("'", "''") + "'"
+
+
+def car_archive_path(project, car, donor_path):
+    return os.path.join(project.dir, car.source_zip) if car.source_zip else donor_path
+
+
+def car_source_media(car):
+    return os.path.splitext(os.path.basename(car.source_zip))[0] if car.source_zip else car.donor
+
+
+def import_car_archive(project, car, path):
+    """Keep the original ZIP in the project; the selected donor supplies database rows only."""
+    source = os.path.splitext(os.path.basename(path))[0]
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", car.media) or len(car.media) != len(source):
+        raise ValueError("Media name must use letters, digits, _ or - and have %d characters." % len(source))
+    if any(c.media.casefold() == car.media.casefold() or c.car_id == car.car_id for c in project.cars):
+        raise ValueError("A car with this media name or ID already exists in the pack.")
+    with zipfile.ZipFile(path) as archive:
+        names = [n for n in archive.namelist() if not n.endswith("/")]
+        if not any(n.lower().endswith(".modelbin") for n in names) or not any(
+                "/" not in n and "\\" not in n and n.lower().endswith(".carbin") for n in names):
+            raise ValueError("This ZIP needs a root .carbin and .modelbin assets. Select a car archive, not a mod package.")
+        bad = archive.testzip()
+        if bad:
+            raise ValueError("Corrupt ZIP entry: %s" % bad)
+    relative = os.path.join("sources", car.media, os.path.basename(path))
+    target = os.path.join(project.dir, relative)
+    if os.path.exists(target):
+        raise ValueError("An imported source already exists at %s; choose another media name." % target)
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    try:
+        shutil.copy2(path, target)
+    except OSError:
+        if os.path.isfile(target):
+            os.remove(target)
+        raise
+    car.source_zip = relative
+    project.cars.append(car)
 
 
 def string_ref(table_hash, key):
@@ -159,7 +198,9 @@ def generate_sql(project, db_path):
 
 def build_car_zip(project, car, donor_zip_path):
     entries = {}
-    with zipfile.ZipFile(donor_zip_path) as z:
+    source_zip = car_archive_path(project, car, donor_zip_path)
+    source_media = car_source_media(car)
+    with zipfile.ZipFile(source_zip) as z:
         for n in z.namelist():
             if not n.endswith("/"):
                 entries[n] = z.read(n)
@@ -171,16 +212,16 @@ def build_car_zip(project, car, donor_zip_path):
                 rel = os.path.relpath(full, folder).replace("\\", "/")
                 with open(full, "rb") as fh:
                     entries[rel] = fh.read()
-    if car.media.lower() != car.donor.lower():
-        if len(car.media) != len(car.donor):
+    if car.media.lower() != source_media.lower():
+        if len(car.media) != len(source_media):
             raise ValueError("car '%s': the media name must have exactly as many characters as the donor '%s' (%d), "
                              "because texture/model paths inside the car's binary files are rewritten in place"
-                             % (car.media, car.donor, len(car.donor)))
-        pat = re.compile(r"^%s(?=[._])" % re.escape(car.donor), re.I)
+                             % (car.media, source_media, len(source_media)))
+        pat = re.compile(r"^%s(?=[._])" % re.escape(source_media), re.I)
         renamed = {}
         for n, b in entries.items():
             d, _, base = n.rpartition("/")
-            renamed[(d + "/" if d else "") + pat.sub(car.media, base)] = _retarget(b, car.donor, car.media)
+            renamed[(d + "/" if d else "") + pat.sub(car.media, base)] = _retarget(b, source_media, car.media)
         entries = renamed
     return build_zip(entries)
 

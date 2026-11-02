@@ -1,9 +1,11 @@
 ﻿"""Azimuth runtime management: sandbox preparation, launching, window embedding, telemetry, console pipe."""
 import ctypes
+import configparser
 import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 import time
 import urllib.request
@@ -101,7 +103,9 @@ class Runtime:
                 lf = f.lower()
                 if not self.sandbox and ((rel == "." and lf in CORE_FILES) or rel.startswith("data")):
                     continue   # never touch an existing install's core files
-                if lf in ("virtualdashboard.ini", "fh2_extraoptions.ini") and os.path.exists(t):
+                if lf in ("virtualdashboard.ini", "fh2_extraoptions.ini", "fh2_extraoptions.dat") and os.path.exists(t):
+                    continue
+                if lf == "azimuth.ini" and os.path.exists(t):
                     continue
                 if not self.sandbox and lf.startswith("carpackstudio"):
                     continue   # the studio mod is for the wrapper sandbox only
@@ -139,7 +143,7 @@ class Runtime:
             f.write(key)
 
     def _write_extra_options(self):
-        """Sandbox only: spawn at the festival site instead of the car meet (Extra Options [Frontend])."""
+        """Sandbox only: start in free roam, preserving unrelated Extra Options settings."""
         ini = os.path.join(self.dir, "FH2_ExtraOptions.ini")
         if not os.path.exists(ini):
             return
@@ -165,41 +169,54 @@ class Runtime:
             out += ["[Frontend]"] + ["%s=%d" % kv for kv in want.items()]
         with open(ini, "w", encoding="utf-8", newline="") as f:
             f.write("\r\n".join(out) + "\r\n")
+        path = os.path.join(self.dir, "FH2_ExtraOptions.dat")
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                data = bytearray(f.read())
+            if len(data) != 164 or struct.unpack_from("<II", data) != (0x32444846, 19):
+                raise ValueError("Unsupported Extra Options settings layout: %s" % path)
+            # Version 19's SpawnLocation (index 19) overrides the legacy INI keys.
+            struct.pack_into("<i", data, 8 + 19 * 4, 2 if self.s.get("spawn_festival", True) else 1)
+            with open(path, "wb") as f:
+                f.write(data)
 
     def _write_launcher_ini(self):
         data = os.path.join(self.dir, "data")
         os.makedirs(data, exist_ok=True)
         ini = os.path.join(data, "azimuth.ini")
+        settings = configparser.ConfigParser(interpolation=None)
+        settings.optionxform = str
         if os.path.exists(ini):
-            lines = open(ini, encoding="utf-8").read().splitlines()
-        else:
-            lines = ["[launcher]", "game=" + GAME_ID, "display=windowed", "player_name=" + PLAYER_NAME,
-                     "settings_version=5", "[title-%s]" % GAME_ID, "name=Forza Horizon 2",
-                     "frame_rate=60", "vsync=off", "graphics=custom", "language=en-GB", "speech=en-US",
-                     "volume=80", "folder=", "look_in="]
-        out = []
-        for l in lines:
-            k = l.split("=", 1)[0]
-            if k == "folder":
-                l = "folder=" + self.game_folder
-            elif k == "look_in":
-                l = "look_in=" + os.path.dirname(self.game_folder)
-            elif k == "display":
-                l = "display=windowed"
-            elif k == "player_name":
-                l = "player_name=" + PLAYER_NAME
-            out.append(l)
-        with open(ini, "w", encoding="utf-8", newline="") as f:
-            f.write("\r\n".join(out) + "\r\n")
+            with open(ini, "rb") as f:
+                content = f.read()
+            encoding = "utf-16" if content.startswith((b"\xff\xfe", b"\xfe\xff")) else "utf-8-sig"
+            settings.read_string(content.decode(encoding))
+        title = "title-" + GAME_ID
+        for section in ("launcher", title):
+            if not settings.has_section(section):
+                settings.add_section(section)
+        settings["launcher"].update({
+            "game": GAME_ID, "display": "windowed", "player_name": PLAYER_NAME,
+            "look_in": os.path.dirname(self.game_folder),
+        })
+        settings["launcher"].setdefault("settings_version", "5")
+        defaults = {"name": "Forza Horizon 2", "frame_rate": "60", "vsync": "off",
+                    "graphics": "custom", "language": "en-GB", "speech": "en-US", "volume": "80"}
+        for key, value in defaults.items():
+            settings[title].setdefault(key, value)
+        settings[title]["folder"] = self.game_folder
+        with open(ini, "w", encoding="utf-16", newline="\r\n") as f:
+            settings.write(f, space_around_delimiters=False)
 
     def _write_loader_ini(self):
         os.makedirs(self.mods_dir, exist_ok=True)
         with open(os.path.join(self.mods_dir, "CarPackStudio.ini"), "w", encoding="utf-8", newline="") as f:
             f.write("[CrashGuard]\r\nEnabled=1\r\nRecover=%d\r\nMaxRecoveries=25\r\n"
-                    "[Boot]\r\nAutoStart=%d\r\nDelayMs=2000\r\n[Car]\r\nForceId=%d\r\n"
+                    "[Boot]\r\nAutoStart=%d\r\nDelayMs=2000\r\n[Car]\r\nForceId=%d\r\nExperimentalReload=%d\r\n"
                     % (1 if self.s.get("crash_recover", True) else 0,
                                            1 if self.s.get("boot_assist", True) else 0,
-                                           self.last_car if self.sandbox and self.last_car else -1))
+                                           self.last_car if self.sandbox and self.last_car else -1,
+                                           int(self.sandbox and self.s.get("experimental_live_reload", False))))
 
     def _write_showfps_ini(self):
         p = os.path.join(self.mods_dir, "ShowFPS.ini")
@@ -220,60 +237,44 @@ class Runtime:
     def running(self):
         return self.proc is not None and self.proc.poll() is None
 
-    # The live car swap runs the game's own reload flow: the studio mod "presses" the radio-left input and the
-    # pause stateflow's radio_left_flow is replaced by the reload sequence for the duration of the session.
-    SWAP_FLOW = ('<state id="radio_left_flow">\r\n'
-                 '    <behavior id="GameControlWrapper" />\r\n'
-                 '    <behavior id="DisablePlayerCarControlsWrapper" />\r\n'
-                 '    <behavior id="BlockPauseEntryWrapper" />\r\n'
-                 '    <node state="debug_car_select_flow.reload_player_car" />\r\n'
-                 '  </state>')
-
     def _pause_xml(self):
         return os.path.join(self.mount, "mediaoverride", "stateflow", "pause.xml")
 
-    def _patch_swap_flow(self, log=print):
+    def _backup_swap_flow(self):
+        """Protect the user's override before the native experimental flow modifies it."""
         p = self._pause_xml()
         orig, absent = p + ".cps_orig", p + ".cps_absent"
         self._restore_swap_flow()
-        try:
-            os.makedirs(os.path.dirname(p), exist_ok=True)
-            if os.path.exists(p):
-                shutil.copy2(p, orig)
-                txt = open(p, encoding="utf-8-sig").read()
-            else:
-                import zipfile
-                with zipfile.ZipFile(os.path.join(self.mount, "media", "stateflow.zip")) as z:
-                    txt = z.read("pause.xml").decode("utf-8-sig")
-                open(absent, "w").close()
-            new, n = re.subn(r'<state id="radio_left_flow">.*?</state>', lambda m: self.SWAP_FLOW, txt, count=1, flags=re.S)
-            if n:
-                with open(p, "w", encoding="utf-8", newline="") as f:
-                    f.write(new)
-            else:
-                self._restore_swap_flow()
-        except OSError as e:
-            log("live swap flow not installed: %s" % e)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        if os.path.exists(p):
+            shutil.copy2(p, orig)
+        else:
+            with open(absent, "x"):
+                pass
 
     def _restore_swap_flow(self):
         p = self._pause_xml()
         orig, absent = p + ".cps_orig", p + ".cps_absent"
-        try:
-            if os.path.exists(orig):
-                shutil.move(orig, p)
-            elif os.path.exists(absent):
-                os.remove(absent)
-                if os.path.exists(p):
-                    os.remove(p)
-        except OSError:
-            pass
+        if os.path.exists(orig):
+            os.replace(orig, p)
+        elif os.path.exists(absent):
+            if os.path.exists(p):
+                os.remove(p)
+            os.remove(absent)
 
     def launch(self):
         if self.running():
             return
         if self.sandbox:
-            self._patch_swap_flow()
-        self.proc = subprocess.Popen([self.exe, "--skip-launcher"], cwd=self.dir)
+            self._restore_swap_flow()
+            if self.s.get("experimental_live_reload", False):
+                self._backup_swap_flow()
+        try:
+            self.proc = subprocess.Popen([self.exe, "--game=fh2", "--skip-launcher"], cwd=self.dir)
+        except OSError:
+            if self.sandbox:
+                self._restore_swap_flow()
+            raise
         self.hwnd = None
 
     def stop(self):
@@ -283,8 +284,10 @@ class Runtime:
                 self.proc.wait(5)
             except subprocess.TimeoutExpired:
                 self.proc.kill()
+                self.proc.wait()
         self.hwnd = None
-        self._restore_swap_flow()
+        if self.sandbox:
+            self._restore_swap_flow()
 
     def game_window(self):
         if not self.running():

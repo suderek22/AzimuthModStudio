@@ -1,0 +1,17 @@
+{
+  "session": "20261102-135948-48692",
+  "pid": 48692,
+  "started": "2026-11-02 13:59:48",
+  "platform": "2.8.0",
+  "azimuth": "E:\\forza2port_win\\project_data\\CarPackStudio\\runtime",
+  "mods": {
+    "CarPackLoader": "1.1.0",
+    "CarPackStudio": "1.0.0",
+    "FH2 Mouse & Keyboard": "1.1.0",
+    "NoPause": "1.1.0",
+    "ShowFPS": "1.1.1",
+    "VirtualDashboard": "1.4.0"
+  },
+  "pipe": "\\\\.\\pipe\\fh2mod-48692",
+  "state": "running"
+}

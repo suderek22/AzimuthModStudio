@@ -2,7 +2,7 @@
 import os
 import time
 
-from PySide6.QtCore import Qt, QTimer, QThread, Signal, QRectF
+from PySide6.QtCore import Qt, QTimer, QThread, Signal, QRectF, QEvent
 from PySide6.QtGui import QColor, QPainter, QPen, QFont, QTextCursor
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit,
                                QLineEdit, QSplitter, QCheckBox, QStackedLayout, QApplication)
@@ -12,7 +12,7 @@ from .overlay import TelemetryOverlay
 from .runtime import Runtime, user32, WS_CHILD, WS_VISIBLE, GWL_STYLE, send_key
 
 VK_RETURN = 0x0D
-STUDIO_COMMANDS = {"time", "freeze", "weather", "status", "recover", "echo", "car"}
+STUDIO_COMMANDS = {"time", "freeze", "weather", "status", "recover", "echo", "car", "animation", "animations"}
 SWP_NOZORDER = 0x4
 
 
@@ -77,7 +77,9 @@ class Console(QWidget):
         self.inp = QLineEdit()
         self.inp.setPlaceholderText("Console – type a mod command (try: list) and press Enter")
         self.inp.returnPressed.connect(self._enter)
+        self.inp.installEventFilter(self)
         self.hist, self.hi = [], 0
+        self.draft = ""
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
@@ -96,12 +98,21 @@ class Console(QWidget):
         if t:
             self.hist.append(t)
             self.hi = len(self.hist)
+            self.draft = ""
             self.write("> " + t, theme.ACCENT)
             self.submit.emit(t)
         self.inp.clear()
 
-    def keyPressEvent(self, e):
-        super().keyPressEvent(e)
+    def eventFilter(self, obj, event):
+        if obj is self.inp and event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Up, Qt.Key_Down):
+            if self.hist:
+                if self.hi == len(self.hist):
+                    self.draft = self.inp.text()
+                step = -1 if event.key() == Qt.Key_Up else 1
+                self.hi = max(0, min(len(self.hist), self.hi + step))
+                self.inp.setText(self.hist[self.hi] if self.hi < len(self.hist) else self.draft)
+            return True
+        return super().eventFilter(obj, event)
 
 
 class WrapperTab(QWidget):
@@ -116,6 +127,8 @@ class WrapperTab(QWidget):
         self.car_cb = None               # returns the car id selected in the tool (used by ▶ Run)
         self.forced_car = None           # car id requested by "Test in game"
         self.car = None
+        self.active_car = None
+        self.car_title_cb = None
         self.embedded = False
         self.detached = False
         self.launch_t = 0
@@ -189,7 +202,8 @@ class WrapperTab(QWidget):
 
     def set_car(self, media, title):
         self.car = media
-        self.car_lbl.setText("Car: %s (%s)" % (title, media))
+        if not (self.rt.running() and self.active_car):
+            self.car_lbl.setText("Car: %s (%s)" % (title, media))
 
     def start(self):
         if self.rt.running():
@@ -219,6 +233,7 @@ class WrapperTab(QWidget):
         self.embedded = False
         self.detached = False
         self.driving = False
+        self.active_car = None
         self.state.setText("Starting…")
         self.console.write("azimuth.exe started (pid %d)" % self.rt.proc.pid, theme.GREEN)
 
@@ -279,6 +294,15 @@ class WrapperTab(QWidget):
     def on_telemetry(self, t):
         self.overlay.update_data(t)
         self.overlay.follow(self.embedded and self.show_overlay.isChecked())
+        if t and t.get("valid") and t.get("car"):
+            media = t["car"]
+            if media != self.active_car:
+                title = self.car_title_cb(media) if self.car_title_cb else media
+                self.car_lbl.setText("Car: %s (%s)" % (title, media))
+                if self.driving:
+                    self.console.write("car changed: %s" % media, theme.GREEN)
+                self.active_car = media
+            self.state.setText("Driving: %s" % media)
         if t and t.get("valid") and not self.driving:
             self.driving = True
             self.state.setText("Driving: %s" % t.get("car", ""))
@@ -323,7 +347,8 @@ class WrapperTab(QWidget):
         if line in ("help", "?"):
             self.console.write("Commands go to the FH2 Mod Platform as '<mod> <command>'. Studio shortcuts: "
                                "time <h>, freeze <0|1>, weather <atm> <rain> <env>|off, status, recover <0|1>, "
-                               "echo <text>. 'list' shows everything.", theme.FG_DIM)
+                               "car <id>, car status, echo <text>. Up/Down recalls session commands. "
+                               "'list' shows everything.", theme.FG_DIM)
             return
         self.send(line, echo=False)
 

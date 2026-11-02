@@ -4,6 +4,7 @@ import os
 import re
 import sqlite3
 import zipfile
+from .pack import car_archive_path, car_source_media
 
 ERR, WARN, OK = "ERROR", "WARN", "ok"
 
@@ -61,10 +62,11 @@ def check_pack(project, mount, build_dir, mods_dir):
         seen_media[c.media.lower()] = 1
         if c.media.lower() in media_to_id and c.media.lower() != c.donor.lower():
             add(WARN, "%s media name collides with the base game car id %d" % (tag, media_to_id[c.media.lower()]))
-        if c.donor and c.media.lower() != c.donor.lower() and len(c.media) != len(c.donor):
+        source_media = car_source_media(c)
+        if source_media and c.media.lower() != source_media.lower() and len(c.media) != len(source_media):
             add(ERR, "%s media name has %d chars but donor '%s' has %d - texture paths inside the car cannot be "
                      "rewritten, so the game falls back to null_car_00 textures. Use a %d-character name (e.g. %s)"
-                % (tag, len(c.media), c.donor, len(c.donor), len(c.donor), c.donor[:-3] + "CPS"))
+                % (tag, len(c.media), source_media, len(source_media), len(source_media), source_media[:-3] + "CPS"))
         if c.donor.lower() not in media_to_id:
             add(ERR, "%s donor '%s' is not in the game database" % (tag, c.donor))
         built = os.path.join(build_dir, "mediapc", "cars", c.media + ".zip")
@@ -83,7 +85,7 @@ def check_pack(project, mount, build_dir, mods_dir):
             add(ERR, "%s MediaName is not present in the installed pack.sql" % tag)
         if os.path.exists(built):
             try:
-                _check_zip(c, built, mount, add, tag)
+                _check_zip(project, c, built, mount, add, tag)
             except zipfile.BadZipFile:
                 add(ERR, "%s zip is corrupt" % tag)
         if len(res) == before:
@@ -91,14 +93,15 @@ def check_pack(project, mount, build_dir, mods_dir):
     return res
 
 
-def _check_zip(c, built, mount, add, tag):
+def _check_zip(project, c, built, mount, add, tag):
     with zipfile.ZipFile(built) as z:
         names = [n for n in z.namelist() if not n.endswith("/")]
         if not names:
             add(ERR, "%s zip is empty" % tag)
             return
         low = c.media.lower()
-        dl = c.donor.lower()
+        source_media = car_source_media(c)
+        dl = source_media.lower()
         stale = [n for n in names if low != dl and n.rpartition("/")[2].lower().startswith(dl)
                  and not n.rpartition("/")[2].lower().startswith(low)]
         if stale:
@@ -108,24 +111,24 @@ def _check_zip(c, built, mount, add, tag):
             add(ERR, "%s zip has no .carbin (car model)" % tag)
         if not any(n.lower().endswith((".swatchbin", ".dds")) for n in names):
             add(ERR, "%s zip has no textures (.swatchbin/.dds)" % tag)
-        donor_zip = os.path.join(mount, "media", "cars", c.donor + ".zip")
+        donor_zip = car_archive_path(project, c, os.path.join(mount, "media", "cars", c.donor + ".zip"))
         if os.path.exists(donor_zip):
             with zipfile.ZipFile(donor_zip) as dz:
-                want = {re.sub(r"^%s(?=[._])" % re.escape(c.donor), c.media, n.rpartition("/")[2], flags=re.I).lower()
+                want = {re.sub(r"^%s(?=[._])" % re.escape(source_media), c.media, n.rpartition("/")[2], flags=re.I).lower()
                         for n in dz.namelist() if not n.endswith("/")}
             have = {n.rpartition("/")[2].lower() for n in names}
             miss = sorted(want - have)
             if miss:
                 add(ERR, "%s missing files present in the donor: %s" % (tag, ", ".join(miss[:8])))
-        if c.media.lower() != c.donor.lower():
+        if c.media.lower() != source_media.lower():
             refs = []
             for n in names:
                 if n.lower().endswith((".xml", ".txt", ".swatchbin", ".carbin", ".modelbin", ".ini")):
-                    if _has_ref(z.read(n), c.donor, c.media):
+                    if _has_ref(z.read(n), source_media, c.media):
                         refs.append(n)
             if refs:
                 add(WARN, "%s still references the donor name '%s' inside: %s (textures/materials may resolve to "
-                          "the donor, or fail)" % (tag, c.donor, ", ".join(refs[:6])))
+                          "the donor, or fail)" % (tag, source_media, ", ".join(refs[:6])))
 
 
 def scan_logs(paths, media_names):

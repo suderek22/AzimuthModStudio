@@ -17,6 +17,7 @@ DEFAULTS = {
     "boot_assist": True,
     "ultimate_save": True,              # sandbox only: generated save with every car and max credits
     "spawn_festival": True,             # sandbox only: Extra Options SpawnAtFestival instead of the car meet
+    "experimental_live_reload": True,   # sandbox console: car <id>, once in free roam
     "save_credits": 999999999,
     "debug_map": "",
 }

@@ -9,6 +9,10 @@
 #include <cstdio>
 #include <cstdarg>
 #include <cstring>
+#include <winsqlite\winsqlite3.h>
+#include <cerrno>
+#include <climits>
+#include <cstdlib>
 
 static const FH2ModApi* g_api;
 static FH2Mod* g_mod;
@@ -341,7 +345,9 @@ static uintptr_t LoadHook(void* self) {
     g_forceCar = -1;   // only the first load is forced; later menu swaps stay untouched
     g_stateTid = GetCurrentThreadId();
     g_haveLoad = true;
-    return g_origLoad(self);
+    uintptr_t result = g_origLoad(self);
+    Log("car: LoadPlayerCar returned %llx", (unsigned long long)result);
+    return result;
 }
 static uintptr_t UnloadHook(void* self) {
     Log("car: UnloadPlayerCar");
@@ -359,6 +365,293 @@ static uintptr_t SetChoiceHook(void* self) {
 typedef uintptr_t (*Fn4)(void*, void*, void*, void*);
 static Fn4 g_origWorld;
 static std::atomic<int> g_padInject{-1}, g_padFrames{0}, g_swapAction{12};
+static std::atomic<bool> g_reloadFlowReady{false};
+static std::atomic<int> g_swapActive{-1}, g_swapCompleted{-1}, g_swapFailed{-1};
+static bool PatchReloadFlow() {
+    std::wstring path = std::wstring(g_api->game_dir) + L"\\mediaoverride\\stateflow\\pause.xml";
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, path.c_str(), L"rb") || !f) {
+        Log("car: cannot read pause flow for reload");
+        return false;
+    }
+    std::string xml;
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof buf, f)) != 0) xml.append(buf, n);
+    bool readOk = !ferror(f);
+    fclose(f);
+    const char* begin = "<state id=\"radio_left_flow\">";
+    size_t start = xml.find(begin), end = xml.find("</state>", start);
+    if (!readOk || start == std::string::npos || end == std::string::npos) {
+        Log("car: reload flow patch failed: radio-left state not found");
+        return false;
+    }
+    xml.replace(start, end + strlen("</state>") - start,
+        "<state id=\"radio_left_flow\">\n"
+        "<behavior id=\"GameControlWrapper\" />\n"
+        "<behavior id=\"BlockPauseEntryWrapper\" />\n"
+        "<node state=\"_cps_store_swap_position\" />\n"
+        "<node state=\"global.enable_mixer_snapshot\" snapshot=\"BASE_Loading\" />\n"
+        "<node state=\"ui_screens.show_fmv_loading_screen_and_continue\" loading_reason=\"LoadingMessages.IDS_FastTravel\" />\n"
+        "<node state=\"global.wait_one_frame\" />\n"
+        "<node state=\"global.pause_game\" />\n"
+        "<node state=\"global.clear_mulligan_key_frames\" start_recording_replay=\"false\" />\n"
+        "<node state=\"global.unload_player_car\" />\n"
+        "<node state=\"global.load_player_car\" />\n"
+        "<node state=\"global.restore_car_position\" />\n"
+        "<node state=\"global.disable_car_control\" />\n"
+        "<node state=\"global.disable_rumble\" />\n"
+        "<node state=\"global.stop_car\" />\n"
+        "<node state=\"global.apply_parking_brake_human\" />\n"
+        "<node state=\"global.reset_camera_to_player\" />\n"
+        "<node state=\"global.load_cutscene\" cutscene_component_id=\"fast_travel_cutscene\" parent_entity_id=\"global/pause_flow\" is_sibling=\"false\" />\n"
+        "<node state=\"global.wait_for_cutscene_loaded\" cutscene_component_id=\"fast_travel_cutscene\" parent_entity_id=\"global/pause_flow\" is_sibling=\"false\" />\n"
+        "<node state=\"global.disable_mixer_snapshot\" snapshot=\"BASE_Loading\" />\n"
+        "<node state=\"global.unpause_game\" />\n"
+        "<node state=\"global.play_cutscene\" cutscene_component_id=\"fast_travel_cutscene\" parent_entity_id=\"global/pause_flow\" is_sibling=\"false\" />\n"
+        "<node state=\"ui_screens.show_empty_scene_and_continue\" />\n"
+        "<node state=\"global.wait_for_cutscene\" cutscene_component_id=\"fast_travel_cutscene\" parent_entity_id=\"global/pause_flow\" is_sibling=\"false\" />\n"
+        "<node state=\"global.unload_cutscene\" cutscene_component_id=\"fast_travel_cutscene\" parent_entity_id=\"global/pause_flow\" is_sibling=\"false\" />\n"
+        "<node state=\"global.reset_camera_to_player\" show_white_out=\"true\" />\n"
+        "<node state=\"global.clear_mulligan_key_frames\" start_recording_replay=\"true\" />\n"
+        "<node state=\"global.enable_car_control\" />\n"
+        "<node state=\"global.enable_rumble\" />\n"
+        "<node state=\"global.release_parking_brake_human\" />\n"
+        "<node state=\"ui_screens.show_hud_and_continue\" />\n"
+        "</state>\n"
+        "<state id=\"_cps_store_swap_position\"><behavior id=\"StoreCarPosition\" entity_id=\"_cps_swap_position\" locator_name=\"\" restore_facing_next_event=\"false\" /></state>");
+    if (_wfopen_s(&f, path.c_str(), L"wb") || !f) {
+        Log("car: cannot write reload flow");
+        return false;
+    }
+    bool ok = fwrite(xml.data(), 1, xml.size(), f) == xml.size();
+    if (fclose(f)) ok = false;
+    Log("car: reload flow patch %s (%zu bytes)", ok ? "installed" : "FAILED", xml.size());
+    return ok;
+}
+static StateFn g_origWaitPause;
+static uintptr_t WaitPauseHook(void* self) {
+    int completed = g_swapActive.exchange(-1);
+    if (completed >= 0) {
+        g_swapCompleted = completed;
+        Log("car: reload flow complete for id %d; gameplay resumed", completed);
+    }
+    EnterCriticalSection(&g_cs);
+    int id = g_swapPending.exchange(-1);
+    if (id >= 0) g_swapActive = id;
+    LeaveCriticalSection(&g_cs);
+    if (id >= 0) {
+        uintptr_t obj = 0;
+        int before = -1;
+        if (ReadChoiceId(&before, &obj)) {
+            g_origChoice((void*)obj, id);
+            Log("car: dispatching native reload flow %d -> %d", before, id);
+            return ((uintptr_t(*)(void*, void*))(GameBase() + 0x1925260))(self, (char*)self + 0x148);
+        }
+        g_swapFailed = id;
+        g_swapActive = -1;
+        Log("car: reload request failed: choice object unavailable");
+    }
+    return g_origWaitPause(self);
+}
+
+// Player lookup and PlayState call from DoorsUnlocked 0.1.5.
+static std::atomic<void*> g_animationCar{nullptr}, g_animationGraph{nullptr};
+static std::atomic<bool> g_animationPending{false};
+static std::string g_animationRequest;
+static DWORD g_animationRequestedAt = 0;
+typedef void (*VehicleUpdateFn)(void*, float, float, uint32_t);
+static VehicleUpdateFn g_origVehicleUpdate;
+static void* PlayerCar();
+static bool PlayAnimation(void* car, const char* state);
+static bool PrepareAnimation(void* car) {
+    __try {
+        uintptr_t ctrl = *(uintptr_t*)((char*)car + 0x4d40);
+        void* graph = ctrl ? *(void**)(ctrl + 0x1c8) : nullptr;
+        if (!graph) return false;
+        int detail = *(int*)((char*)graph + 0x10);
+        ((void(*)(void*, int))(GameBase() + 0x16fbe90))(graph, 0);
+        g_animationGraph = graph;
+        g_animationCar = car;
+        Log("animation: full detail selected car=%p graph=%p previous=%d", car, graph, detail);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        Log("animation: detail selection faulted");
+        return false;
+    }
+}
+static void MaintainAnimationDetail(void* car) {
+    __try {
+        uintptr_t ctrl = *(uintptr_t*)((char*)car + 0x4d40);
+        void* graph = ctrl ? *(void**)(ctrl + 0x1c8) : nullptr;
+        if (!graph || graph != g_animationGraph.load()) {
+            g_animationCar = nullptr;
+            return;
+        }
+        if (*(int*)((char*)graph + 0x10) != 0)
+            ((void(*)(void*, int))(GameBase() + 0x16fbe90))(graph, 0);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        g_animationCar = nullptr;
+        Log("animation: detail maintenance faulted; released");
+    }
+}
+static void VehicleUpdateHook(void* car, float dt, float frameDt, uint32_t frame) {
+    g_origVehicleUpdate(car, dt, frameDt, frame);
+    if (g_animationPending.load() && PlayerCar() == car) {
+        EnterCriticalSection(&g_cs);
+        if (!g_animationRequest.empty()) {
+            if (!g_animationRequestedAt) {
+                if (PrepareAnimation(car)) g_animationRequestedAt = GetTickCount();
+                else {
+                    Log("animation: request FAILED during branch preparation");
+                    g_animationRequest.clear();
+                    g_animationPending = false;
+                }
+            } else if (GetTickCount() - g_animationRequestedAt >= 350) {
+                if (car == g_animationCar.load()) {
+                    bool ok = PlayAnimation(car, g_animationRequest.c_str());
+                    Log("animation: %s %s", g_animationRequest.c_str(), ok ? "submitted on full-detail branch" : "FAILED");
+                } else Log("animation: request cancelled because the player car changed");
+                g_animationRequest.clear();
+                g_animationRequestedAt = 0;
+                g_animationPending = false;
+            }
+        }
+        LeaveCriticalSection(&g_cs);
+    }
+    if (car == g_animationCar.load()) MaintainAnimationDetail(car);
+}
+static void* PlayerCar() {
+    uintptr_t b = GameBase();
+    __try {
+        void* holder = *(void**)(b + 0x34ABA60);
+        if (!holder) return nullptr;
+        void* resolved = ((void*(*)(void*, void*))(b + 0x21E0C0))(holder, nullptr);
+        if (!resolved) return nullptr;
+        void* car = nullptr;
+        ((void(*)(void*, void**))(b + 0x2DA060))(resolved, &car);
+        return car && *(uintptr_t*)car == b + 0x2C5CB80 ? car : nullptr;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        Log("animation: player lookup faulted");
+        return nullptr;
+    }
+}
+static bool PlayAnimation(void* car, const char* state) {
+    __try {
+        uintptr_t ctrl = *(uintptr_t*)((char*)car + 0x4d40);
+        if (!ctrl) {
+            Log("animation: no controller for %s", state);
+            return false;
+        }
+        ((void(*)(void*, const char*))(GameBase() + 0xF5D300))(car, state);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        Log("animation: PlayState faulted for %s", state);
+        return false;
+    }
+}
+static bool AnimationStates(void* car, char* out, size_t size) {
+        __try {
+            uintptr_t ctrl = *(uintptr_t*)((char*)car + 0x4d40);
+            uintptr_t graph = ctrl ? *(uintptr_t*)(ctrl + 0x1c8) : 0;
+            if (!graph) {
+                Reply(out, size, "error: this car has no active animation controller");
+                return false;
+            }
+            uintptr_t head = *(uintptr_t*)(graph + 0x268);
+            uintptr_t node = *(uintptr_t*)head;
+            size_t used = 0;
+            for (int count = 0; node != head && count < 256; ++count) {
+                size_t len = *(size_t*)(node + 0x20);
+                size_t capacity = *(size_t*)(node + 0x28);
+                const char* key = capacity < 16 ? (char*)(node + 0x10) : *(char**)(node + 0x10);
+                if (len == 0 || len > 127 || used + len + 2 >= size) {
+                    Reply(out, size, "error: animation state list is invalid or too large");
+                    return false;
+                }
+                memcpy(out + used, key, len);
+                used += len;
+                out[used++] = '\n';
+                node = *(uintptr_t*)node;
+            }
+            if (node != head) {
+                Reply(out, size, "error: animation state list exceeds 256 entries");
+                return false;
+            }
+            out[used] = 0;
+            return true;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            Reply(out, size, "error: could not read animation graph");
+            Log("animation: graph lookup faulted");
+            return false;
+        }
+    }
+static void CmdAnimations(char* reply, size_t size) {
+        void* car = PlayerCar();
+        if (!car) {
+            Reply(reply, size, "error: no active player car");
+            return;
+        }
+        AnimationStates(car, reply, size);
+    }
+static void CmdAnimationInfo(char* reply, size_t size) {
+    void* car = PlayerCar();
+    if (!car) { Reply(reply, size, "error: no active player car"); return; }
+    __try {
+        uintptr_t ctrl = *(uintptr_t*)((char*)car + 0x4d40);
+        uintptr_t graph = ctrl ? *(uintptr_t*)(ctrl + 0x1c8) : 0;
+        if (!graph) { Reply(reply, size, "error: no animation graph"); return; }
+        Log("animation: car=%p graph=%p detail=%d", car, (void*)graph, *(int*)(graph + 0x10));
+        uintptr_t head = *(uintptr_t*)(graph + 0x228), node = *(uintptr_t*)head;
+        for (int i = 0; node != head && i < 256; ++i) {
+            size_t len = *(size_t*)(node + 0x20), cap = *(size_t*)(node + 0x28);
+            const char* key = cap < 16 ? (char*)(node + 0x10) : *(char**)(node + 0x10);
+            if (len > 127) break;
+            Log("animation: graph parameter %.*s", (int)len, key);
+            node = *(uintptr_t*)node;
+        }
+        Reply(reply, size, "animation graph diagnostics written to console");
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        Log("animation: graph diagnostics faulted");
+        Reply(reply, size, "error: animation graph diagnostics faulted");
+    }
+}
+static void CmdAnimation(const char* args, char* reply, size_t size) {
+    size_t n = strlen(args);
+    if (!n || n > 127) {
+        Reply(reply, size, "error: animation requires a state name, e.g. doorLF:open");
+        return;
+    }
+    void* car = PlayerCar();
+    if (!car) {
+        Reply(reply, size, "error: no active player car");
+        return;
+    }
+    char states[8192];
+    if (!AnimationStates(car, states, sizeof states)) {
+        Reply(reply, size, "%s", states);
+        return;
+    }
+    std::string key = std::string(args) + "\n";
+    std::string list = std::string("\n") + states;
+    if (list.find("\n" + key) == std::string::npos) {
+        Reply(reply, size, "error: state %s is not in the active car's animation graph", args);
+        return;
+    }
+    if (!g_origVehicleUpdate) {
+        Reply(reply, size, "error: animation update hook unavailable");
+        return;
+    }
+    EnterCriticalSection(&g_cs);
+    bool busy = g_animationPending.load();
+    if (!busy) {
+        g_animationRequest = args;
+        g_animationRequestedAt = 0;
+        g_animationPending = true;
+    }
+    LeaveCriticalSection(&g_cs);
+    Reply(reply, size, busy ? "error: another animation is preparing" : "animation preparing on full-detail branch: %s", args);
+}
 
 // Live swap: put the car into the player's choice object, then press the input that the studio's patched pause
 // stateflow (radio_left_flow, see runtime.py) maps to the game's own reload flow. Runs on the state thread.
@@ -376,9 +669,6 @@ static bool SetChoiceAndPress(int id) {
 }
 static uintptr_t WorldTick(void* a, void* b, void* c, void* d) {
     uintptr_t r = g_origWorld(a, b, c, d);
-    int p = g_swapPending;
-    if (p >= 0 && g_haveLoad && __readgsdword(0x48) == g_stateTid && g_swapPending.compare_exchange_strong(p, -1))
-        SetChoiceAndPress(p);
     return r;
 }
 // Input::WasPressed(this, action, player, flag) at rva 0x1072510. Used to log action ids and to press one on demand.
@@ -401,6 +691,13 @@ static DWORD WINAPI CarThread(LPVOID) {
     void* b = g_api->wait_for_code(180000);
     if (!b) return 0;
     uintptr_t base = (uintptr_t)b, vt = base + 0x2c5de38;
+    g_api->hook_function(g_mod, "Vehicle animation detail", (void*)(base + 0x2a9400),
+                       (void*)VehicleUpdateHook, (void**)&g_origVehicleUpdate);
+    std::wstring ini = g_dir + L"\\CarPackStudio.ini";
+    if (GetPrivateProfileIntW(L"Car", L"ExperimentalReload", 0, ini.c_str())) {
+        g_reloadFlowReady = PatchReloadFlow();
+        g_api->hook_function(g_mod, "WaitForPause reload dispatch", (void*)(base + 0x964810), (void*)WaitPauseHook, (void**)&g_origWaitPause);
+    }
     g_api->hook_function(g_mod, "Input::WasPressed", (void*)(base + 0x1072510), (void*)PressedHook, (void**)&g_origPressed);
     FH2Hook* h2 = g_api->hook_pointer(g_mod, "PlayerCarChoice::Set", (void**)(vt + 0x1b8), (void*)ChoiceHook, (void**)&g_origChoice);
     FH2Hook* h3 = g_api->hook_function(g_mod, "LoadPlayerCar", (void*)(base + RVA_LOAD_CAR), (void*)LoadHook, (void**)&g_origLoad);
@@ -412,13 +709,72 @@ static DWORD WINAPI CarThread(LPVOID) {
         h4 != nullptr, h5 != nullptr, h6 != nullptr, g_forceCar.load());
     return 0;
 }
+static bool ValidateCarId(int id, char* reply, size_t size) {
+    std::wstring path;
+    for (const wchar_t* directory : {L"mediaoverride", L"mediapc", L"media"}) {
+        std::wstring candidate = std::wstring(g_api->game_dir) + L"\\" + directory + L"\\stripped\\gamedbRC.slt";
+        if (GetFileAttributesW(candidate.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            path = candidate;
+            break;
+        }
+    }
+    if (path.empty()) {
+        Reply(reply, size, "error: cannot validate car ID %d: game database was not found; no swap performed", id);
+        Log("car: ID validation failed: game database not found");
+        return false;
+    }
+    int bytes = WideCharToMultiByte(CP_UTF8, 0, path.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string utf8(bytes, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, path.c_str(), -1, &utf8[0], bytes, nullptr, nullptr);
+    sqlite3* db = nullptr;
+    sqlite3_stmt* statement = nullptr;
+    int rc = sqlite3_open_v2(utf8.c_str(), &db, SQLITE_OPEN_READONLY, nullptr);
+    if (rc == SQLITE_OK)
+        rc = sqlite3_prepare_v2(db, "SELECT 1 FROM Data_Car WHERE Id=? LIMIT 1", -1, &statement, nullptr);
+    if (rc == SQLITE_OK) rc = sqlite3_bind_int(statement, 1, id);
+    if (rc == SQLITE_OK) rc = sqlite3_step(statement);
+    bool found = rc == SQLITE_ROW;
+    if (!found) {
+        if (rc == SQLITE_DONE)
+            Reply(reply, size, "error: car ID %d does not exist in the active game database; no swap performed", id);
+        else
+            Reply(reply, size, "error: cannot validate car ID %d: %s; no swap performed", id,
+                  db ? sqlite3_errmsg(db) : "cannot open database");
+        Log("car: %s", reply);
+    }
+    if (statement) sqlite3_finalize(statement);
+    if (db) sqlite3_close(db);
+    return found;
+}
 static void CmdCar(const char* args, char* reply, size_t size) {
-    int id = atoi(args);
-    if (id <= 0) { Reply(reply, size, "usage: car <car id>"); return; }
+    if (!strcmp(args, "status")) {
+        int active = g_swapActive.load(), pending = g_swapPending.load();
+        if (active >= 0) Reply(reply, size, "swapping %d", active);
+        else if (pending >= 0) Reply(reply, size, "queued %d", pending);
+        else if (g_swapFailed >= 0) Reply(reply, size, "failed %d", g_swapFailed.load());
+        else if (g_swapCompleted >= 0) Reply(reply, size, "complete %d", g_swapCompleted.load());
+        else Reply(reply, size, "idle");
+        return;
+    }
+    errno = 0;
+    char* end = nullptr;
+    long parsed = strtol(args, &end, 10);
+    while (end && (*end == ' ' || *end == '\t')) ++end;
+    if (errno == ERANGE || end == args || !end || *end || parsed <= 0 || parsed > INT_MAX) {
+        Reply(reply, size, "error: invalid car ID; use car <positive integer ID> | status; no swap performed"); return;
+    }
+    int id = (int)parsed;
+    if (!ValidateCarId(id, reply, size)) return;
     if (!g_haveLoad) { Reply(reply, size, "error: no player car has been loaded yet"); return; }
-    const char* sp = strchr(args, ' ');
-    if (sp && atoi(sp + 1) > 0) g_swapAction = atoi(sp + 1);   // input action mapped to the swap flow
-    g_swapPending = id;
+    if (!g_reloadFlowReady || !g_origWaitPause) { Reply(reply, size, "error: live reload is experimental and disabled; use Test in game to restart"); return; }
+    EnterCriticalSection(&g_cs);
+    bool busy = g_swapActive >= 0 || g_swapPending >= 0;
+    if (!busy) {
+        g_swapCompleted = g_swapFailed = -1;
+        g_swapPending = id;
+    }
+    LeaveCriticalSection(&g_cs);
+    if (busy) { Reply(reply, size, "error: car reload already in progress"); return; }
     Reply(reply, size, "swapping to car %d", id);
 }
 
@@ -444,6 +800,9 @@ static void CmdHandler(void*, const char* name, const char* args, char* reply, s
     else if (!strcmp(name, "weather")) CmdWeather(args, reply, size);
     else if (!strcmp(name, "car")) CmdCar(args, reply, size);
     else if (!strcmp(name, "pad")) CmdPad(args, reply, size);
+    else if (!strcmp(name, "animation")) CmdAnimation(args, reply, size);
+    else if (!strcmp(name, "animations")) CmdAnimations(reply, size);
+    else if (!strcmp(name, "animationinfo")) CmdAnimationInfo(reply, size);
     else Reply(reply, size, "error: unknown command");
 }
 
@@ -487,6 +846,9 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     api->add_command(g_mod, "weather", "weather <atmosphere> <rain> <environment> (0-100) | off", CmdHandler, nullptr);
     api->add_command(g_mod, "car", "car <id>: swap the player's car live", CmdHandler, nullptr);
     api->add_command(g_mod, "pad", "pad <action>: press a game input action for a few frames", CmdHandler, nullptr);
+    api->add_command(g_mod, "animation", "animation <state>: play a state on the active car (DoorsUnlocked)", CmdHandler, nullptr);
+    api->add_command(g_mod, "animations", "list playable states in the active car's animation graph", CmdHandler, nullptr);
+    api->add_command(g_mod, "animationinfo", "log animation graph parameters for diagnosis", CmdHandler, nullptr);
     Log("CarPackStudio ready: crash guard %s", g_recover ? "recovering" : "logging");
     return 0;
 }
