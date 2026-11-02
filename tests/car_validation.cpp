@@ -33,6 +33,18 @@ int wmain(int argc, wchar_t** argv) {
     assert(!strcmp(reply, "swapping to car 20000") && g_swapPending == 20000);
     CmdCar("333", reply, sizeof reply);
     assert(strstr(reply, "already in progress") && g_swapPending == 20000);
+    g_swapActive = g_swapPending.exchange(-1);
+    g_swapSource = 333;
+    g_swapStarted = g_swapProgressAt = GetTickCount64() - 61000;
+    g_swapStage = "LoadPlayerCar: waiting for native streaming";
+    g_swapJobState = 0;
+    CheckSwapTimeout();
+    assert(g_swapTimedOut && g_swapActive == 20000 && g_swapPending == -1);
+    CmdCar("details", reply, sizeof reply);
+    assert(strstr(reply, "source=333 target=20000"));
+    assert(strstr(reply, "native_state=0 timed_out=1"));
+    CmdCar("333", reply, sizeof reply);
+    assert(strstr(reply, "already in progress") && g_swapActive == 20000);
     DeleteCriticalSection(&g_cs);
     puts("PASS: base/custom IDs, active database precedence, invalid IDs leave swap state unchanged, busy guard");
     return 0;
