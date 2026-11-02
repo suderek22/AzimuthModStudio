@@ -1,0 +1,12 @@
+FFmpeg 7.1 essentials build from www.gyan.dev
+Copyright (c) 2000-2024 the FFmpeg developers
+License: GNU GPL version 3 or later (see ffmpeg-license.txt).
+
+Copied unmodified from the local SatNav Voice Pack Creator resources.
+Run ffmpeg.exe -version for the full build configuration.
+Build provider: https://www.gyan.dev/ffmpeg/builds/
+FFmpeg source: https://ffmpeg.org/download.html
+
+Before distributing a packaged executable containing this GPL build, satisfy
+the GPL's corresponding-source requirements for the exact distributed binary,
+including its enabled libraries. A license notice alone is not sufficient.
