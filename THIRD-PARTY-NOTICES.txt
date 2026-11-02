@@ -1,0 +1,36 @@
+Car Pack Studio 0.1.0 Experimental - third-party notices
+=====================================================
+
+Azimuth 1.0.2
+Bundled runtime executable/libraries. See runtime\data\licenses.txt.
+
+FH2 Mod Platform 2.8.0; Trinculo54 and contributors (MIT).
+FH2 Extra Options 0.3.2; Arthur / RokkuDayo.
+FH2 Mouse & Keyboard, NoPause, ShowFPS; qiangqiang101.
+See runtime\fh2-mods\notices and Help > Credits.
+
+FM5 import tooling / ForzaTech Studio
+Asset-format references and xg.dll texture detiling support.
+SatNav Voice Pack Creator
+FSB5 parsing and XMA wrapping approach.
+AnthemSaveEditor (qiangqiang101)
+Save-format reference used by the bundled test-save generator.
+
+Qt for Python / PySide6 / Shiboken6 (The Qt Company)
+LGPLv3/GPL/commercial licensing as provided by those projects.
+Qt libraries are dynamically linked in the packaged application.
+Source and licensing: https://www.qt.io/licensing/
+
+NumPy, Pillow, PyOpenGL, texture2ddecoder and PyInstaller
+Retain their upstream license terms when redistributing.
+PyInstaller has a GPL license with its bootloader exception.
+
+FFmpeg 7.1 essentials build, www.gyan.dev
+GPLv3-or-later. See bin\ffmpeg-license.txt and bin\ffmpeg-notice.txt.
+
+This local experimental ZIP is not a statement that redistribution requirements
+or rights for every bundled component have been independently cleared.
+
+
+Game rights remain with their owners.
+Base game content is not bundled.
