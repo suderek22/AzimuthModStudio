@@ -10,6 +10,7 @@ DEFAULTS = {
     "mount": "",
     "runtime_mode": "sandbox",          # sandbox | existing
     "azimuth_dir": "",                  # used when runtime_mode == existing
+    "launch_arguments": "--game=fh2 --skip-launcher",
     "sandbox_dir": os.path.join(os.environ.get("LOCALAPPDATA", APPDATA), "CarPackStudio", "runtime"),
     "language": "EN",
     "last_project": "",

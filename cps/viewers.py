@@ -8,9 +8,11 @@ from PySide6.QtCore import Qt, QPointF, Signal
 from PySide6.QtGui import QImage, QPixmap, QPainter, QColor, QBrush, QSurfaceFormat
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox,
-                               QFileDialog, QListWidget, QListWidgetItem, QSplitter, QSlider, QMessageBox)
+                               QFileDialog, QListWidget, QListWidgetItem, QSplitter, QSlider, QMessageBox,
+                               QComboBox)
 
 from . import theme
+from .lod import mesh_lod, lod_sort_key
 
 
 class ImageCanvas(QWidget):
@@ -279,7 +281,7 @@ class ModelViewer(QWidget):
                 mat = md.materials[m.material] if m.material < len(md.materials) else "mat%d" % m.material
                 mesh = {"name": m.name, "pos": pos, "pos32": pos, "nrm32": nrm,
                         "tris": m.tris, "idx32": np.ascontiguousarray(m.tris.reshape(-1), dtype=np.uint32),
-                        "color": _color_for(mat), "visible": True, "mat": mat}
+                        "color": _color_for(mat), "visible": True, "enabled": True, "mat": mat}
                 self.meshes.append(mesh)
                 it = QListWidgetItem("%s  [%s]" % (m.name, mat))
                 it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
@@ -287,6 +289,18 @@ class ModelViewer(QWidget):
                 self.list.addItem(it)
             notes = md.notes
         self.list.itemChanged.connect(self._toggled)
+        self.lod = QComboBox()
+        self.lod.addItem("All LODs", None)
+        lods: set[str] = set()
+        for mesh in self.meshes:
+            value = mesh_lod(mesh["name"])
+            if value is not None:
+                lods.add(value)
+        for value in sorted(lods, key=lod_sort_key):
+            self.lod.addItem(value, value)
+        self.lod.setToolTip("Filter meshes by their LOD suffix (e.g. engineBay_a_LOD0); "
+                            "legacy LOD prefixes are also supported. Parts without a LOD tag remain visible.")
+        self.lod.currentIndexChanged.connect(self._apply_lod)
         self.gl.set_meshes(self.meshes)
         wire = QCheckBox("Wireframe")
         wire.toggled.connect(lambda v: (setattr(self.gl, "wire", v), self.gl.update()))
@@ -303,7 +317,7 @@ class ModelViewer(QWidget):
             info.setToolTip("\n".join(notes[:20]))
         bar = QHBoxLayout()
         bar.setContentsMargins(6, 4, 6, 4)
-        for w in (wire, flat, allb, noneb, info):
+        for w in (QLabel("LOD:"), self.lod, wire, flat, allb, noneb, info):
             bar.addWidget(w)
         bar.addStretch()
         hint = QLabel("LMB orbit · RMB/MMB pan · wheel zoom")
@@ -320,16 +334,24 @@ class ModelViewer(QWidget):
         lay.addWidget(sp)
 
     def _toggled(self, it):
-        self.meshes[self.list.row(it)]["visible"] = it.checkState() == Qt.Checked
+        self.meshes[self.list.row(it)]["enabled"] = it.checkState() == Qt.Checked
+        self._apply_lod()
+
+    def _apply_lod(self):
+        selected = self.lod.currentData()
+        for i, mesh in enumerate(self.meshes):
+            matches = selected is None or mesh_lod(mesh["name"]) in (None, selected)
+            self.list.item(i).setHidden(not matches)
+            mesh["visible"] = mesh["enabled"] and matches
         self.gl.update()
 
     def _set_all(self, v):
         self.list.blockSignals(True)
         for i, m in enumerate(self.meshes):
-            m["visible"] = v
+            m["enabled"] = v
             self.list.item(i).setCheckState(Qt.Checked if v else Qt.Unchecked)
         self.list.blockSignals(False)
-        self.gl.update()
+        self._apply_lod()
 
 
 def install_gl_format():

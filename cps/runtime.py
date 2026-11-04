@@ -197,9 +197,14 @@ class Runtime:
         for section in ("launcher", title):
             if not settings.has_section(section):
                 settings.add_section(section)
+        search_roots = [path for path in settings["launcher"].get("look_in", "").split("|") if path]
+        base_root = os.path.dirname(self.game_folder)
+        if os.path.normcase(os.path.normpath(base_root)) not in {
+                os.path.normcase(os.path.normpath(path)) for path in search_roots}:
+            search_roots.append(base_root)
         settings["launcher"].update({
             "game": GAME_ID, "display": "windowed", "player_name": PLAYER_NAME,
-            "look_in": os.path.dirname(self.game_folder),
+            "look_in": "|".join(search_roots),
         })
         settings["launcher"].setdefault("settings_version", "5")
         defaults = {"name": "Forza Horizon 2", "frame_rate": "60", "vsync": "off",
@@ -267,13 +272,20 @@ class Runtime:
     def launch(self):
         if self.running():
             return
+        arguments = self.s.get("launch_arguments", config.DEFAULTS["launch_arguments"])
+        if not isinstance(arguments, str) or "\0" in arguments:
+            raise ValueError("Azimuth launch arguments must be text without null characters.")
+        # Preserve Windows quoting and backslashes exactly; no shell interprets the arguments.
+        command = subprocess.list2cmdline([self.exe])
+        if arguments.strip():
+            command += " " + arguments.strip()
         if self.sandbox:
             self._restore_swap_flow()
             if self.s.get("experimental_live_reload", False):
                 self._backup_swap_flow()
         try:
-            self.proc = subprocess.Popen([self.exe, "--game=fh2", "--skip-launcher"], cwd=self.dir)
-        except OSError:
+            self.proc = subprocess.Popen(command, cwd=self.dir, shell=False)
+        except (OSError, ValueError):
             if self.sandbox:
                 self._restore_swap_flow()
             raise

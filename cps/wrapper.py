@@ -2,21 +2,26 @@
 import os
 import re
 import shlex
+import shutil
 import sqlite3
 import time
+import xml.etree.ElementTree as ET
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QThread, Signal, QRectF
 from PySide6.QtGui import QColor, QPainter, QPen, QFont
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-                               QSplitter, QCheckBox, QStackedLayout, QApplication)
+                               QSplitter, QCheckBox, QStackedLayout, QApplication, QFileDialog)
 
 from . import theme
 from .console import Console, ConsoleWindow
 from .overlay import TelemetryOverlay
 from .runtime import Runtime, user32, WS_CHILD, WS_VISIBLE, GWL_STYLE, send_key
+from .travel import DESTINATIONS, TRACKS, resolve_destination, resolve_track
 
 VK_RETURN = 0x0D
-STUDIO_COMMANDS = {"time", "freeze", "weather", "status", "recover", "echo", "car", "animation", "animations"}
+STUDIO_COMMANDS = {"time", "freeze", "weather", "status", "recover", "echo", "car", "animation", "animations",
+                   "input", "trace", "pipelines"}
 SWP_NOZORDER = 0x4
 
 
@@ -106,6 +111,7 @@ class WrapperTab(QWidget):
         self.log_pending = {}
         self.console_window = None
         self.console_sizes = [620, 160]
+        self.scripts_window = None
 
         self.run_btn = QPushButton("▶ Run")
         self.run_btn.setObjectName("primary")
@@ -224,6 +230,8 @@ class WrapperTab(QWidget):
         self.console.write("azimuth.exe started (pid %d)" % self.rt.proc.pid, theme.GREEN)
 
     def stop(self):
+        if self.scripts_window and (self.scripts_window.capturing or self.scripts_window.playing) and self.rt.running():
+            self.scripts_window.stop()
         if self.embedded:
             self.container.child = None
         self.rt.stop()
@@ -320,12 +328,14 @@ class WrapperTab(QWidget):
                     self._log_line(key, line.rstrip("\r"))
 
     def _log_line(self, key, line):
-        if re.search(r"\[CarPackStudio\]\s+command:\s+car status\s*$", line, re.I):
+        if re.search(r"\[CarPackStudio\]\s+command:\s+(?:car|input) status\s*$", line, re.I):
             return
         match = re.search(r"\[([^\]]+)\]", line)
         resource = match.group(1) if key == "platform" and match else {
             "azimuth": "Azimuth", "extraoptions": "ExtraOptions", "critical": "CarPackStudio"
         }.get(key, "Platform")
+        if "[AzimuthPipeline]" in line:
+            resource = "Azimuth"
         bad = any(word in line.lower() for word in ("error", "fail", "crash", "cannot", "invalid", "refused"))
         if self.debug_targets and resource.casefold() not in self.debug_targets and not bad and key != "critical":
             return
@@ -360,11 +370,57 @@ class WrapperTab(QWidget):
 
     def _console_command(self, line):
         first = line.split(None, 1)[0].lower() if line else ""
-        if first not in ("filter", "debug", "console"):
+        if first not in ("filter", "debug", "console", "tp", "track"):
             return False
         try:
             parts = shlex.split(line)
-            if first == "console":
+            if first == "track":
+                value = " ".join(parts[1:])
+                if value.casefold() == "list":
+                    self.console.notice("Available tracks:\n" + "\n".join(
+                        "track %s (%d)" % (name, track_id) for name, track_id in TRACKS.items()))
+                    return True
+                if value.casefold() == "status":
+                    reply = self.rt.command("CarPackStudio track status")
+                else:
+                    if not value:
+                        raise ValueError("usage: track Anthem | TheIsland | 542 | 549 | list | status")
+                    name, track_id = resolve_track(value)
+                    if not self.rt.running():
+                        raise ValueError("Start the wrapper and enter free roam before changing tracks.")
+                    reply = self.rt.command("CarPackStudio track %d" % track_id)
+                    if reply.startswith("track queued:"):
+                        self.console.notice("Travel to %s requested. Native progress appears below; "
+                                            "use track status to inspect it." % name)
+                self.console.notice(reply, theme.RED if reply.startswith("error:") else None)
+            elif first == "tp":
+                if len(parts) == 2 and parts[1].casefold() == "list":
+                    self.console.notice("Available teleport entries:\n" +
+                                        "\n".join("tp Anthem " + name for name in DESTINATIONS))
+                    return True
+                if len(parts) == 2 and parts[1].casefold() == "status":
+                    reply = self.rt.command("CarPackStudio teleport status")
+                    self.console.notice(reply, theme.RED if reply.startswith("error:") else None)
+                    return True
+                if len(parts) < 3:
+                    raise ValueError("usage: tp Anthem <place> | tp list | tp status; e.g. tp Anthem Airport")
+                name, coordinates = resolve_destination(self.s.get("mount", ""), parts[1], " ".join(parts[2:]))
+                if not self.rt.running():
+                    raise ValueError("Start the wrapper and enter free roam before teleporting.")
+                current_id = None
+                if self.active_car:
+                    try:
+                        current_id = self.rt.car_id(self.active_car)
+                    except (OSError, sqlite3.Error) as ex:
+                        self.console.notice("Cannot resolve car for teleport recovery: %s" % ex, theme.ORANGE)
+                reply = self.rt.command("CarPackStudio teleport " + " ".join(format(value, ".9g") for value in coordinates))
+                if not reply.startswith("tp queued:"):
+                    raise ValueError(reply)
+                self.console.notice("Anthem / %s: %s" % (name, reply))
+                if current_id is not None:
+                    self._track_reload(current_id, current_id)
+                    self.state.setText("Teleporting to Anthem / %s..." % name)
+            elif first == "console":
                 if len(parts) != 2 or parts[1] not in ("0", "1"):
                     raise ValueError("usage: console 1 (detach) | console 0 (attach)")
                 self.set_console_detached(parts[1] == "1")
@@ -385,6 +441,10 @@ class WrapperTab(QWidget):
                 if not target:
                     raise ValueError('usage: debug Azimuth | debug "mod name" | debug off')
                 if target.lower() == "off":
+                    if self.rt.running():
+                        reply = self.rt.command("CarPackStudio pipelines off")
+                        if reply.startswith("error:"):
+                            raise ValueError(reply)
                     self.debug_targets.clear()
                     self.console.notice("Debug log streaming disabled.")
                 else:
@@ -393,14 +453,53 @@ class WrapperTab(QWidget):
                     names.update({"azimuth": "Azimuth", "extraoptions": "ExtraOptions"})
                     if target.casefold() not in names:
                         raise ValueError("Unknown log source '%s'. Available: %s" % (target, ", ".join(sorted(names.values()))))
+                    if target.casefold() == "azimuth":
+                        if not self.rt.running():
+                            raise ValueError("Start the wrapper first to enable native Azimuth pipeline tracing.")
+                        reply = self.rt.command("CarPackStudio pipelines on")
+                        if not reply.startswith("Azimuth "):
+                            raise ValueError(reply)
+                        self.console.notice(reply)
                     self.debug_targets.add(target.casefold())
                     self.console.notice("Debug %s: streaming selected sources plus errors and critical messages. "
-                                        "Available live log lines only. Thread calls, responses "
-                                        "and pipeline internals are shown only if the source logs them; no native "
-                                        "thread/function tracing is enabled. Console filters still apply." % names[target.casefold()])
-        except ValueError as ex:
+                                        "%s Console filters still apply." % (
+                                            names[target.casefold()],
+                                            "Native D3D12 pipeline creation/cache calls include thread IDs, durations and HRESULTs."
+                                            if target.casefold() == "azimuth" else
+                                            "Mod details depend on the mod's own logging."))
+        except (ValueError, OSError, ET.ParseError, KeyError) as ex:
             self.console.notice("error: %s" % ex, theme.RED)
         return True
+
+    def show_scripts(self):
+        if self.scripts_window is None:
+            from .scripts import ScriptsDialog
+            self.scripts_window = ScriptsDialog(self)
+        self.scripts_window.show()
+        self.scripts_window.raise_()
+        self.scripts_window.activateWindow()
+
+    def start_map_capture(self):
+        self.send("trace start")
+
+    def export_map_capture(self):
+        if self.rt.running():
+            reply = self.rt.command("CarPackStudio trace stop")
+            self.console.notice(reply)
+            if not reply.startswith("trace stopped:"):
+                return
+        source = Path(self.rt.mods_dir) / "CPSMapTrace.jsonl"
+        if not source.is_file():
+            self.console.notice("error: no map transition capture; start capture before changing maps in game.", theme.RED)
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Export map transition capture", "map-transition.jsonl",
+                                             "JSON Lines (*.jsonl)")
+        if path:
+            try:
+                shutil.copyfile(source, path)
+                self.console.notice("Map transition capture exported: " + path)
+            except OSError as ex:
+                self.console.notice("error: cannot export capture: %s" % ex, theme.RED)
 
     def _critical_exit(self, code):
         msg = "CRITICAL: game process exited with code 0x%08X" % (code & 0xFFFFFFFF)
@@ -419,6 +518,8 @@ class WrapperTab(QWidget):
                                "car <id>, car status, car details, echo <text>. Up/Down recalls session commands. "
                                'filter [-]text "match", filter [-]resource "name", filter remove; '
                                'debug Azimuth|"<mod name>"|off; console 1 (detach), console 0 (attach). '
+                               "track Anthem|TheIsland|542|549, track list, track status; "
+                               "tp Anthem <place>, tp list, tp status; trace start|stop|status; input record <0-3>|play|stop|status. "
                                "'list' shows everything.", theme.FG_DIM)
             return
         self.send(line, echo=False)
@@ -448,15 +549,18 @@ class WrapperTab(QWidget):
         reply = self.rt.command(line)
         self.console.notice(reply, theme.RED if reply.startswith("error:") else None)
         if is_swap and reply.startswith("swapping to car ") and reply[16:].isdigit():
-            self.swap_target = int(reply[16:])
-            self.swap_previous_id = previous_id
-            self.swap_started = time.monotonic()
-            self.swap_timed_out = False
-            self.recover_btn.hide()
-            self.poller.swap_target = self.swap_target
-            self.state.setText("Swapping to ID %d..." % self.swap_target)
-            if previous_id is None:
-                self.console.write("Previous car ID unavailable; timeout recovery will require Stop/Run.", theme.ORANGE)
+            self._track_reload(int(reply[16:]), previous_id)
+
+    def _track_reload(self, target, previous_id):
+        self.swap_target = target
+        self.swap_previous_id = previous_id
+        self.swap_started = time.monotonic()
+        self.swap_timed_out = False
+        self.recover_btn.hide()
+        self.poller.swap_target = target
+        self.state.setText("Swapping to ID %d..." % target)
+        if previous_id is None:
+            self.console.write("Previous car ID unavailable; timeout recovery will require Stop/Run.", theme.ORANGE)
 
     def _clear_swap(self):
         self.swap_target = None
@@ -521,9 +625,14 @@ class WrapperTab(QWidget):
         QTimer.singleShot(1500, self.start)
 
     def shutdown(self):
+        if self.scripts_window and (self.scripts_window.capturing or self.scripts_window.playing) and self.rt.running():
+            self.scripts_window.stop()
         self.set_console_detached(False)
         self.poller.alive = False
         self.poller.wait(1000)
         if self.rt.running() and self.embedded:
             self.container.release(self.rt)
         self.rt.stop()
+        if self.scripts_window:
+            self.scripts_window.timer.stop()
+            self.scripts_window.close()

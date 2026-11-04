@@ -36,7 +36,8 @@ CREDITS = """
 <li><b>FH2 Extra Options 0.3.2</b> – by Arthur (RokkuDayo): skip-intro, media overrides, save-check bypass and more.</li>
 <li><b>Virtual Dashboard</b> – the telemetry HTTP API used by the debug overlay.</li>
 <li><b>DoorsUnlocked 0.1.5</b> – player-car lookup and animation-state playback, integrated into the CPS DLL.</li>
-<li><b>FH2NoPause 1.1.0</b> – keeps the wrapper running when it loses focus.</li>
+<li><b>FH2NoPause 1.1.0</b> – keeps the wrapper running when it loses focus; its documented WGI controller
+hook and XInput mapping informed the Studio controller-script integration.</li>
 <li><b>FM5 import tooling</b> (FM5import / Repack-ForzaZip / SwatchbinConverter) – the zip layout and database
 cloning knowledge this tool is based on.</li>
 <li><b>ForzaTech Studio</b> – inspiration for the model / swatchbin viewers; its <code>xg.dll</code> detiling library is used
@@ -85,6 +86,12 @@ The wrapper's car label follows live telemetry, including swaps through Extra Op
 Test in game sends the selected car ID to a running wrapper without restarting it.
 If the wrapper is stopped, it builds/installs the project and launches normally.
 New or changed pack assets require stopping and running the wrapper again.</p>
+<p><b>Map travel:</b> <code>track TheIsland</code> (549) and <code>track Anthem</code> (542)
+use the game's native travel flow without restarting Azimuth. <code>track list</code> lists maps;
+<code>track status</code> shows the loading stage and timeout state. Storm Island must be mounted
+in Azimuth; native DLC checks remain active. Enter free roam before requesting travel.
+<code>tp Anthem &lt;place&gt;</code> is for locations within the loaded mainland, not map changes.
+Physical radio-right input is reserved/disabled by the experimental travel flow.</p>
 <p><b>Console:</b> scrolling up pauses auto-follow; <b>Latest</b> resumes it.
 Repeated <code>[CarPackStudio] command: car status</code> polling lines are hidden from the console.
 Use <code>filter text "example"</code> or <code>filter resource "CarPackStudio"</code> to include matching logs;
@@ -95,8 +102,8 @@ when any are active; changes also refilter the last 5,000 retained entries. Comm
 <p><code>debug Azimuth</code> or <code>debug "mod name"</code> streams selected sources' available live logs,
 plus errors/critical messages from other sources (console filters still apply).
 Repeat to add sources; <code>debug off</code> restores normal logging.
-This does not instrument native thread/function calls: threads, responses and pipeline details are shown only
-when the source logs them.
+Azimuth tracing instruments D3D12 pipeline creation/cache-load API calls, including thread IDs, durations and HRESULTs.
+It is not a full native function trace. Mod debugging uses each mod's own log messages.
 <code>console 1</code> detaches the console and <code>console 0</code> reattaches it.
 Tools → Console detach / Console attach provides the same actions. Closing the separate console reattaches it,
 preserving history, filters, input and output. The detached console opens at 1000 × 700
@@ -113,6 +120,11 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("Settings")
         self.s = dict(s)
         self.mount = QLineEdit(s["mount"])
+        self.launch_args = QLineEdit(s.get("launch_arguments", config.DEFAULTS["launch_arguments"]))
+        self.launch_args.setToolTip('Arguments only, without azimuth.exe. Applies on the next launch.\n'
+                                   'Use double quotes around paths containing spaces. Leave blank for no arguments.')
+        reset_args = QPushButton("Reset to default")
+        reset_args.clicked.connect(lambda: self.launch_args.setText(config.DEFAULTS["launch_arguments"]))
         b = QPushButton("Browse…")
         b.clicked.connect(lambda: self._pick(self.mount))
         self.mode = QComboBox()
@@ -141,6 +153,10 @@ class SettingsDialog(QDialog):
         r.addWidget(self.mount)
         r.addWidget(b)
         f.addRow("Game Mount folder", r)
+        args_row = QHBoxLayout()
+        args_row.addWidget(self.launch_args)
+        args_row.addWidget(reset_args)
+        f.addRow("Azimuth launch arguments", args_row)
         f.addRow("Runtime", self.mode)
         r2 = QHBoxLayout()
         r2.addWidget(self.az)
@@ -173,6 +189,7 @@ class SettingsDialog(QDialog):
     def result_settings(self):
         s = dict(self.s)
         s.update(mount=self.mount.text().strip(), runtime_mode=self.mode.currentText(),
+                 launch_arguments=self.launch_args.text().strip(),
                  azimuth_dir=self.az.text().strip(), sandbox_dir=self.sandbox.text().strip(),
                  telemetry_port=self.port.value(), crash_recover=self.recover.isChecked(),
                  boot_assist=self.boot.isChecked(), ultimate_save=self.usave.isChecked(), spawn_festival=self.festival.isChecked(),
@@ -550,10 +567,15 @@ class MainWindow(QMainWindow):
         car = r.addMenu("&Car")
         self.animations_menu = car.addMenu("&Animations")
         self.animations_menu.aboutToShow.connect(self._animation_menu)
+        scripts = mb.addMenu("&Scripts")
+        scripts.addAction(QAction("Record / play XInput scripts...", self, triggered=self.wrapper.show_scripts))
         t = mb.addMenu("&Tools")
         t.addAction(QAction("Game files manager", self, triggered=self.open_game_files_manager))
         t.addAction(QAction("Console detach", self, triggered=lambda: self.wrapper.set_console_detached(True)))
         t.addAction(QAction("Console attach", self, triggered=lambda: self.wrapper.set_console_detached(False)))
+        capture = t.addMenu("Map transition capture")
+        capture.addAction(QAction("Start capture", self, triggered=self.wrapper.start_map_capture))
+        capture.addAction(QAction("Stop and export...", self, triggered=self.wrapper.export_map_capture))
         t.addAction(QAction("Open file from disk…", self, triggered=self.open_disk_file))
         t.addAction(QAction("Open game logs (platform.log)", self, triggered=self.open_platform_log))
         h = mb.addMenu("&Help")
