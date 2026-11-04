@@ -9,17 +9,35 @@ import struct
 import sqlite3
 import subprocess
 import time
+import threading
 import urllib.request
 from ctypes import wintypes
 from contextlib import closing
 
 from . import config
+from .command_pipe import request as pipe_request
+from .dependencies import BUNDLED_RUNTIME, import_dependencies, require_dependencies, missing_dependencies
 
 user32 = ctypes.windll.user32
 user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
 user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
 user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+user32.SetParent.argtypes = [wintypes.HWND, wintypes.HWND]
+user32.SetParent.restype = wintypes.HWND
+user32.GetForegroundWindow.restype = wintypes.HWND
+user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+user32.GetAncestor.restype = wintypes.HWND
+user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+user32.SetActiveWindow.argtypes = [wintypes.HWND]
+user32.SetActiveWindow.restype = wintypes.HWND
+user32.SetFocus.argtypes = [wintypes.HWND]
+user32.SetFocus.restype = wintypes.HWND
+user32.GetFocus.restype = wintypes.HWND
+user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+user32.AttachThreadInput.restype = wintypes.BOOL
 GWL_STYLE = -16
 WS_CAPTION, WS_THICKFRAME, WS_SYSMENU, WS_MINIMIZEBOX, WS_MAXIMIZEBOX = 0x00C00000, 0x00040000, 0x00080000, 0x00020000, 0x00010000
 WS_VISIBLE, WS_POPUP = 0x10000000, 0x80000000
@@ -28,7 +46,6 @@ SWP_NOZORDER, SWP_FRAMECHANGED, SWP_SHOWWINDOW = 0x4, 0x20, 0x40
 
 GAME_ID = "1a96545b"
 PLAYER_NAME = "CarPackStudio"   # gamertag shown in game; Azimuth still stores the profile under saves\player-1
-CORE_FILES = ("azimuth.exe", "dwrite.dll", "winmm.dll", "fh2_extraoptions.ini")
 
 
 def find_windows(pid):
@@ -58,6 +75,28 @@ def send_key(hwnd, vk):
     user32.keybd_event(vk, scan, 2, 0)
 
 
+def focus_game_window(hwnd, host) -> bool:
+    """Transfer real keyboard focus across input threads without stealing another app's focus."""
+    foreground = user32.GetForegroundWindow()
+    if not hwnd or not user32.IsWindow(hwnd) or user32.GetAncestor(foreground, 2) not in (host, hwnd):
+        return False
+    thread = ctypes.windll.kernel32.GetCurrentThreadId()
+    game_thread = user32.GetWindowThreadProcessId(hwnd, None)
+    if not game_thread:
+        return False
+    attached = game_thread != thread
+    if attached and not user32.AttachThreadInput(thread, game_thread, True):
+        return False
+    try:
+        user32.SetForegroundWindow(host)
+        user32.SetActiveWindow(host)
+        user32.SetFocus(hwnd)
+        return user32.GetFocus() == hwnd
+    finally:
+        if attached:
+            user32.AttachThreadInput(thread, game_thread, False)
+
+
 class Runtime:
     def __init__(self, settings):
         self.s = settings
@@ -66,6 +105,7 @@ class Runtime:
         self.saved_style = None
         self.extra_cars = []   # [(pack car id, donor car id)] to place into the generated save
         self.last_car = None   # car id the save should start in (the car chosen for testing)
+        self._command_lock = threading.Lock()
 
     @property
     def dir(self):
@@ -96,39 +136,36 @@ class Runtime:
     def prepare(self, log=print):
         src = config.runtime_src()
         dst = self.dir
+        if self.running():
+            raise ValueError("Stop the wrapper before preparing its runtime.")
+        if self.sandbox and self.s.get("dependency_source") and missing_dependencies(dst):
+            import_dependencies(self.s["dependency_source"], dst, log)
+        require_dependencies(dst)
         os.makedirs(dst, exist_ok=True)
-        for root, _d, files in os.walk(src):
-            rel = os.path.relpath(root, src)
-            for f in files:
-                s = os.path.join(root, f)
-                t = os.path.normpath(os.path.join(dst, rel, f))
-                lf = f.lower()
-                if not self.sandbox and ((rel == "." and lf in CORE_FILES) or rel.startswith("data")):
-                    continue   # never touch an existing install's core files
-                if lf in ("virtualdashboard.ini", "fh2_extraoptions.ini", "fh2_extraoptions.dat") and os.path.exists(t):
-                    continue
-                if lf == "azimuth.ini" and os.path.exists(t):
-                    continue
-                if not self.sandbox and lf.startswith("carpackstudio"):
-                    continue   # the studio mod is for the wrapper sandbox only
-                newer = lf in ("carpackloader.dll", "carpackstudio.dll") and os.path.exists(t) and os.path.getmtime(t) < os.path.getmtime(s)
-                if not os.path.exists(t) or os.path.getsize(t) != os.path.getsize(s) or newer:
-                    os.makedirs(os.path.dirname(t), exist_ok=True)
-                    try:
-                        shutil.copy2(s, t)
-                    except PermissionError:
-                        log("cannot overwrite %s (is the game running?)" % t)
+        for relative in BUNDLED_RUNTIME:
+            s, t = os.path.join(src, relative), os.path.join(dst, relative)
+            name = os.path.basename(relative).lower()
+            if not self.sandbox and name.startswith("carpackstudio"):
+                continue
+            if name.endswith(".ini") and os.path.exists(t):
+                continue
+            if os.path.normcase(os.path.abspath(s)) == os.path.normcase(os.path.abspath(t)):
+                continue
+            if not os.path.isfile(s):
+                raise FileNotFoundError("Missing bundled Studio asset: " + s)
+            if not os.path.exists(t) or os.path.getsize(t) != os.path.getsize(s) or os.path.getmtime(t) < os.path.getmtime(s):
+                os.makedirs(os.path.dirname(t), exist_ok=True)
+                shutil.copy2(s, t)
         if self.sandbox:
             self._write_launcher_ini()
             self._write_extra_options()
-            if self.s.get("ultimate_save", True):
-                self.install_save(log)
+            self.install_save(log)
         self._write_loader_ini()
         self._write_showfps_ini()
         self._write_dashboard_ini()
 
     def install_save(self, log=print):
-        """Provides the sandbox with a complete save (all cars, max credits). Rebuilt only when its inputs change."""
+        """Always regenerate the sandbox test save from the shipped template."""
         from . import save
         saves = os.path.join(self.dir, save.TITLE_DIR)
         gdb = os.path.join(self.mount, "media", "stripped", "gamedbRC.slt")
@@ -219,11 +256,12 @@ class Runtime:
         os.makedirs(self.mods_dir, exist_ok=True)
         with open(os.path.join(self.mods_dir, "CarPackStudio.ini"), "w", encoding="utf-8", newline="") as f:
             f.write("[CrashGuard]\r\nEnabled=1\r\nRecover=%d\r\nMaxRecoveries=25\r\n"
-                    "[Boot]\r\nAutoStart=%d\r\nDelayMs=2000\r\n[Car]\r\nForceId=%d\r\nExperimentalReload=%d\r\n"
+                    "[Boot]\r\nAutoStart=%d\r\nDelayMs=2000\r\n[Car]\r\nForceId=%d\r\nExperimentalReload=%d\r\nTravelTestBinds=%d\r\n"
                     % (1 if self.s.get("crash_recover", True) else 0,
                                            1 if self.s.get("boot_assist", True) else 0,
                                            self.last_car if self.sandbox and self.last_car else -1,
-                                           int(self.sandbox and self.s.get("experimental_live_reload", False))))
+                                           int(self.sandbox),
+                                           int(self.s.get("travel_test_binds", True))))
 
     def _write_showfps_ini(self):
         p = os.path.join(self.mods_dir, "ShowFPS.ini")
@@ -275,14 +313,14 @@ class Runtime:
         arguments = self.s.get("launch_arguments", config.DEFAULTS["launch_arguments"])
         if not isinstance(arguments, str) or "\0" in arguments:
             raise ValueError("Azimuth launch arguments must be text without null characters.")
+        require_dependencies(self.dir)
         # Preserve Windows quoting and backslashes exactly; no shell interprets the arguments.
         command = subprocess.list2cmdline([self.exe])
         if arguments.strip():
             command += " " + arguments.strip()
         if self.sandbox:
             self._restore_swap_flow()
-            if self.s.get("experimental_live_reload", False):
-                self._backup_swap_flow()
+            self._backup_swap_flow()
         try:
             self.proc = subprocess.Popen(command, cwd=self.dir, shell=False)
         except (OSError, ValueError):
@@ -349,16 +387,21 @@ class Runtime:
 
     def command(self, line):
         """Send one console line to the mod platform's command pipe."""
-        sess = self.session()
-        if not sess or not self.running():
-            return "error: game is not running"
+        if not self._command_lock.acquire(timeout=2):
+            return "error: mod platform connection busy; no command was sent"
         try:
-            with open(sess.get("pipe"), "r+b", buffering=0) as f:
-                f.write((line.strip() + "\n").encode("utf-8"))
-                data = f.read(65536)
-            return data.decode("utf-8", "replace").strip() or "(no reply)"
-        except OSError as e:
-            return "error: cannot reach the mod platform pipe (%s)" % e
+            proc = self.proc
+            sess = self.session()
+            if not sess or proc is None or proc.poll() is not None:
+                return "error: game is not running"
+            if not isinstance(sess, dict) or sess.get("pid") != proc.pid:
+                return "error: mod platform session is not ready for this game process"
+            try:
+                return pipe_request(sess["pipe"], line)
+            except (OSError, ValueError, KeyError, TypeError) as ex:
+                return "error: mod platform connection unavailable: %s" % ex
+        finally:
+            self._command_lock.release()
 
     def log_files(self):
         return {

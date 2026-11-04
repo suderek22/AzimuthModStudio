@@ -2,7 +2,9 @@
 import os
 import sqlite3
 import zipfile
+from contextlib import closing
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from .strtable import StrTable
 
@@ -27,6 +29,16 @@ class Car:
         return "%s %s %s" % (self.year, self.make, self.name)
 
 
+@dataclass(frozen=True)
+class EventRace:
+    id: int
+    name: str
+    map_name: str
+    track_id: int
+    route: int
+    laps: int
+
+
 class GameData:
     def __init__(self, mount):
         self.mount = mount
@@ -38,17 +50,36 @@ class GameData:
     def valid(mount):
         return os.path.isfile(os.path.join(mount, "media", "stripped", "gamedbRC.slt"))
 
-    def _strings(self, lang="EN"):
+    def _strings(self, lang="EN", table_hashes=None):
+        table_hashes = TABLE_HASH if table_hashes is None else table_hashes
         out = {}
         zp = os.path.join(self.media, "Stripped", "StringTables", lang + ".zip")
         if not os.path.exists(zp):
             return out
-        z = zipfile.ZipFile(zp)
-        for n in z.namelist():
-            base = n.split("/")[-1]
-            if base in TABLE_HASH:
-                out[TABLE_HASH[base]] = StrTable(z.read(n)).strings
+        with zipfile.ZipFile(zp) as z:
+            for n in z.namelist():
+                base = n.split("/")[-1]
+                if base in table_hashes:
+                    out[table_hashes[base]] = StrTable(z.read(n)).strings
         return out
+
+    def event_races(self, lang="EN") -> list[EventRace]:
+        strings = self._strings(lang, {"AnthemEvents.str": 0xB2E6, "Tracks.str": 0xC992})
+        path = next((Path(self.mount) / folder / "stripped" / "gamedbRC.slt"
+                     for folder in ("mediaoverride", "mediapc", "media")
+                     if (Path(self.mount) / folder / "stripped" / "gamedbRC.slt").is_file()), None)
+        if path is None:
+            raise FileNotFoundError("Active game database not found; configure the Game Mount folder.")
+        query = (
+            "SELECT r.AnthemEventRaceId,e.Name,t.DisplayName,t.MediaTrack,t.id,t.Route,r.NumLaps "
+            "FROM AnthemEventRaces r JOIN AnthemEvents e ON e.AnthemEventId=r.AnthemEventId "
+            "JOIN Tracks t ON t.id=r.TrackId WHERE e.EventType=0 AND t.MediaTrack IN (542,549) "
+            "AND t.MediaName IN ('Anthem','Test03') ORDER BY r.AnthemEventRaceId"
+        )
+        with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+            return [EventRace(race_id, self.resolve(strings, track_name) or self.resolve(strings, event_name),
+                              "Anthem" if media_track == 542 else "TheIsland", track_id, route, laps)
+                    for race_id, event_name, track_name, media_track, track_id, route, laps in db.execute(query)]
 
     def resolve(self, strs, ref):
         if isinstance(ref, str) and ref.startswith("_&"):

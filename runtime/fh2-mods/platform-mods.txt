@@ -1,7 +1,0 @@
-﻿# What the MODS tab remembers about each mod (DLL, name, version, description, GitHub repo, offline only).
-CarPackLoader.dll	CarPackLoader	1.1.0	Car Pack Studio: loads car packs (SQL and strings) into the game.		0
-CarPackStudio.dll	CarPackStudio	1.0.0	Car Pack Studio test bench: crash guard, title skip, time/weather, console.		0
-FH2Mouse.dll	FH2 Mouse & Keyboard	1.1.0	Drive with the keyboard, point at things in the menus and click them, drag the map, turn the garage camera, place decals with the keyboard, and fly the photo mode camera, all without picking up a controller.	qiangqiang101/FH2Mouse	0
-FH2NoPause.dll	NoPause	1.1.0	Keeps the game running when its window loses focus (alt-tab)	qiangqiang101/FH2NoPauseWhenLosingFocus	0
-ShowFPS.dll	ShowFPS	1.1.1	Displaying FPS counter and GPU utilization in game.	qiangqiang101/ShowFPS	0
-VirtualDashboard.dll	VirtualDashboard	1.4.0	Live telemetry dashboard for your phone over Wi-Fi.	suderek22/FH2_VirtualDashboard	0

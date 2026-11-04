@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
 from PyInstaller.utils.hooks import copy_metadata
+from cps.dependencies import bundled_runtime_files
 
 root = Path(SPECPATH)
 a = Analysis(
@@ -22,13 +23,12 @@ exe = EXE(
 )
 coll = COLLECT(
     exe, a.binaries, a.datas,
-    Tree(str(root / "runtime"), prefix="runtime",
-         excludes=["logs", "cache", "platform-logs", "platform.log", "platform-session.json", "*.check"]),
+    list(bundled_runtime_files(root / "runtime")),
     Tree(str(root / "save_template"), prefix="save_template"),
     Tree(str(root / "resources"), prefix="resources"),
     [("bin\\" + name, str(root / "bin" / name), "DATA") for name in
      ("xg.dll", "ffmpeg.exe", "ffmpeg-license.txt", "ffmpeg-notice.txt")],
     [("README.txt", str(root / "README.txt"), "DATA"),
      ("THIRD-PARTY-NOTICES.txt", str(root / "THIRD-PARTY-NOTICES.txt"), "DATA")],
-    strip=False, upx=False, name="CarPackStudio-0.1.0-experimental",
+    strip=False, upx=False, name="CarPackStudio-0.2.2-beta",
 )

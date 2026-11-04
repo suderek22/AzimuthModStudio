@@ -1,6 +1,7 @@
 static std::atomic<bool> g_tpQueued{false}, g_tpActive{false};
 static float g_tpPosition[3] = {};
 static ULONGLONG g_tpQueuedAt = 0;
+static int g_tpTrack = 542;
 static thread_local bool g_tpStoring = false;
 static bool g_tpHooks = false;
 static StateFn g_origStorePosition;
@@ -56,7 +57,9 @@ static void CmdTrack(const char* args, char* reply, size_t size) {
             snprintf(reply, size, "error: supported tracks: Anthem (542), TheIsland (549); use track status");
         else if (!g_trackFlowReady || !g_origWaitPause || !g_haveLoad)
             snprintf(reply, size, "error: native track flow unavailable; enable experimental reload and restart the wrapper");
-        else if (!TrackSettled() || (ActiveTrack() != 542 && ActiveTrack() != 549) ||
+        else if (SpawnBusy())
+            snprintf(reply, size, "error: use spawn clear and wait for an empty spawn list before map travel");
+        else if (EventBusy() || !TrackSettled() || (ActiveTrack() != 542 && ActiveTrack() != 549) ||
                  g_trackActive >= 0 || g_trackPending >= 0 || g_tpQueued || g_tpActive ||
                  g_swapActive >= 0 || g_swapPending >= 0)
             snprintf(reply, size, "error: wait for settled free roam; map travel or car reload is already in progress");
@@ -131,7 +134,11 @@ static uintptr_t StorePositionHook(void* self) {
     return result;
 }
 static void CmdTeleport(const char* args, char* reply, size_t size) {
-    if (!strcmp(args, "status")) {
+    if (!strcmp(args, "status") || !strcmp(args, "capture")) {
+        if (!strcmp(args, "capture") && (EventBusy() || !TrackSettled() || g_trackPending >= 0 || g_trackActive >= 0 ||
+            g_swapPending >= 0 || g_swapActive >= 0 || g_tpQueued || g_tpActive)) {
+            snprintf(reply, size, "error: wait for settled free roam before capturing a teleport place"); return;
+        }
         uintptr_t car = (uintptr_t)PlayerCar(), state = 0;
         float position[3] = {};
         if (!car || !Ptr(car + 0x4c08, &state) || !Rd(state + 0xef0, position, sizeof position)) {
@@ -143,23 +150,28 @@ static void CmdTeleport(const char* args, char* reply, size_t size) {
         return;
     }
     float x, y, z;
+    int track = ActiveTrack();
     char tail;
-    if (sscanf_s(args, "%f %f %f %c", &x, &y, &z, &tail, 1u) != 3 ||
+    // Explicit map transport prevents coordinates being applied after a map change.
+    bool parsed = sscanf_s(args, "at %d %f %f %f %c", &track, &x, &y, &z, &tail, 1u) == 4;
+    if (!parsed) parsed = sscanf_s(args, "%f %f %f %c", &x, &y, &z, &tail, 1u) == 3;
+    if (!parsed ||
         !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) ||
         fabs(x) > 100000 || fabs(y) > 100000 || fabs(z) > 100000) {
-        snprintf(reply, size, "error: use the Studio console: tp Anthem <place>"); return;
+        snprintf(reply, size, "error: use the Studio console: tp <map> <place>"); return;
     }
     if (!g_tpHooks || !g_reloadFlowReady || !g_origWaitPause || !g_haveLoad) {
         snprintf(reply, size, "error: teleport hooks/player car unavailable; restart the wrapper with the updated runtime"); return;
     }
-    if (ActiveTrack() != 542 || !TrackSettled()) {
-        snprintf(reply, size, "error: Anthem must be fully loaded and no map change may be in progress"); return;
+    if (track <= 0 || ActiveTrack() != track || !TrackSettled()) {
+        snprintf(reply, size, "error: requested track %d must be loaded and settled; use track to change maps first", track); return;
     }
     EnterCriticalSection(&g_cs);
-    bool busy = g_tpQueued || g_tpActive || g_swapActive >= 0 || g_swapPending >= 0 ||
+    bool busy = EventBusy() || SpawnBusy() || g_tpQueued || g_tpActive || g_swapActive >= 0 || g_swapPending >= 0 ||
                 g_trackPending >= 0 || g_trackActive >= 0;
     if (!busy) {
         g_tpPosition[0] = x; g_tpPosition[1] = y; g_tpPosition[2] = z;
+        g_tpTrack = track;
         g_tpApplied = false;
         g_swapCompleted = g_swapFailed = -1;
         g_tpQueuedAt = GetTickCount64();

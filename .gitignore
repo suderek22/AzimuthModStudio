@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+/build/
+/dist/
+/build-release.log
+*.obj
+*.res
+*.pdb
+*.ilk
+*.exp
+*.lib
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+/map-transition.jsonl
+
+# Local third-party installations are not source or redistributable runtime assets.
+/runtime/*
+!/runtime/fh2-mods/
+/runtime/fh2-mods/*
+!/runtime/fh2-mods/CarPackStudio.dll
+!/runtime/fh2-mods/CarPackLoader.dll
+!/runtime/fh2-mods/VirtualDashboard.dll
+!/runtime/fh2-mods/VirtualDashboard.ini

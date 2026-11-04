@@ -450,6 +450,8 @@ static Fn4 g_origWorld;
 static std::atomic<int> g_padInject{-1}, g_padFrames{0}, g_swapAction{12};
 static std::atomic<bool> g_reloadFlowReady{false};
 static std::atomic<bool> g_trackFlowReady{false};
+static bool g_travelTestBinds = true;
+static thread_local bool g_pollingRadio = false;
 static bool PatchReloadFlow() {
     const unsigned char trackDispatchSig[] = {0x48,0x8d,0x97,0x78,0x01,0x00,0x00};
     const unsigned char canPauseSig[] = {0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x74,0x24,0x10};
@@ -469,6 +471,15 @@ static bool PatchReloadFlow() {
     while ((n = fread(buf, 1, sizeof buf, f)) != 0) xml.append(buf, n);
     bool readOk = !ferror(f);
     fclose(f);
+    if (!g_travelTestBinds) {
+        const unsigned char accessor[] = {0x40,0x53,0x48,0x83,0xec,0x30,0x48,0x8b,0x49,0x08};
+        const unsigned char change[] = {0x48,0x8b,0xc4,0x57,0x48,0x83,0xec,0x70};
+        if (!Signature(GameBase(), 0x766c70, accessor) || !Signature(GameBase(), 0x660e50, change)) {
+            Log("radio: ERROR unsupported native station controls; no flow changes written");
+            return false;
+        }
+        Log("radio: physical buttons use native station controls; console dispatch remains enabled");
+    }
     const char* begin = "<state id=\"radio_left_flow\">";
     size_t start = xml.find(begin), end = xml.find("</state>", start);
     if (!readOk || start == std::string::npos || end == std::string::npos) {
@@ -544,8 +555,22 @@ static bool PatchReloadFlow() {
 }
 static StateFn g_origWaitPause;
 static void* PlayerCar();
+static bool EventBusy();
+static bool SpawnBusy();
 #include "studio_travel.h"
+#include "studio_events.h"
+static bool ValidateCarId(int id, char* reply, size_t size, std::string* media = nullptr);
+#include "studio_spawn.h"
+static uintptr_t PollOriginalPause(void* self) {
+    g_pollingRadio = true;
+    uintptr_t result = g_origWaitPause(self);
+    g_pollingRadio = false;
+    return result;
+}
 static uintptr_t WaitPauseHook(void* self) {
+    StudioSpawn::Dispatch(self);
+    StudioEvents::Dispatch(self);
+    if (EventBusy()) return PollOriginalPause(self);
     if (DispatchTrack(self)) return 0;
     int completed = g_swapActive.exchange(-1);
     if (completed >= 0) {
@@ -560,7 +585,7 @@ static uintptr_t WaitPauseHook(void* self) {
     EnterCriticalSection(&g_cs);
     if (g_tpQueued.exchange(false)) {
         uintptr_t obj = 0; int current = -1;
-        if (GetTickCount64() - g_tpQueuedAt > 60000 || ActiveTrack() != 542 || !TrackSettled() ||
+        if (GetTickCount64() - g_tpQueuedAt > 60000 || ActiveTrack() != g_tpTrack || !TrackSettled() ||
             !ReadChoiceId(&current, &obj)) {
             Log("tp: ERROR request expired, map changed or player choice unavailable; no teleport performed");
         } else {
@@ -590,7 +615,7 @@ static uintptr_t WaitPauseHook(void* self) {
         g_swapActive = -1;
         Log("car: reload request failed: choice object unavailable");
     }
-    return g_origWaitPause(self);
+    return PollOriginalPause(self);
 }
 
 // Player lookup and PlayState call from DoorsUnlocked 0.1.5.
@@ -809,21 +834,40 @@ static uintptr_t WorldTick(void* a, void* b, void* c, void* d) {
     uintptr_t r = g_origWorld(a, b, c, d);
     return r;
 }
-// Input::WasPressed(this, action, player, flag) at rva 0x1072510. Used to log action ids and to press one on demand.
+// Input::WasPressed(this, player, action, flag) at rva 0x1072510.
 typedef bool (*PressFn)(void*, int, int, bool);
 static PressFn g_origPressed;
-static bool PressedHook(void* self, int action, int player, bool flag) {
-    bool r = g_origPressed(self, action, player, flag);
+static bool PressedHook(void* self, int player, int action, bool flag) {
+    bool r = g_origPressed(self, player, action, flag);
+    if (action == g_padInject.load() && g_padFrames.load() > 0) {
+        if (--g_padFrames <= 0) g_padInject = -1;
+        r = true;
+    }
+    if (g_pollingRadio && g_reloadFlowReady && !g_travelTestBinds && (action == 23 || action == 24)) {
+        if (r) {
+            // Same accessor, direction and shared ownership as RadioChangeStation::OnEnter.
+            uintptr_t service = 0;
+            if (!Ptr(GameBase() + 0x34c0f40, &service) || !service) {
+                Log("radio: ERROR native radio service unavailable");
+                return false;
+            }
+            StudioSpawn::Shared radio;
+            ((void*(*)(void*, void*))(GameBase() + 0x766c70))((void*)service, &radio);
+            if (!radio.object) {
+                Log("radio: ERROR native radio manager unavailable");
+                return false;
+            }
+            ((void(*)(void*, int))(GameBase() + 0x660e50))(radio.object, action == 23 ? 0 : 1);
+            Log("radio: native station change %s", action == 23 ? "left" : "right");
+        }
+        return false;
+    }
     // The experimental pause-flow slot is command-only: physical radio input must never change maps.
-    if (action == 24 && g_trackFlowReady) return false;
+    if (action == 24 && g_trackFlowReady && g_travelTestBinds) return false;
     static unsigned seen = 0;
     if (r && action >= 0 && action < 32 && !(seen & (1u << action))) {
         seen |= 1u << action;
         Log("input: WasPressed action=%d player=%d flag=%d", action, player, (int)flag);
-    }
-    if (action == g_padInject.load() && g_padFrames.load() > 0) {
-        if (--g_padFrames <= 0) g_padInject = -1;
-        return true;
     }
     return r;
 }
@@ -831,9 +875,12 @@ static DWORD WINAPI CarThread(LPVOID) {
     void* b = g_api->wait_for_code(180000);
     if (!b) return 0;
     uintptr_t base = (uintptr_t)b, vt = base + 0x2c5de38;
+    StudioEvents::Install(base);
+    StudioSpawn::Install(base);
     g_api->hook_function(g_mod, "Vehicle animation detail", (void*)(base + 0x2a9400),
                        (void*)VehicleUpdateHook, (void**)&g_origVehicleUpdate);
     std::wstring ini = g_dir + L"\\CarPackStudio.ini";
+    g_travelTestBinds = GetPrivateProfileIntW(L"Car", L"TravelTestBinds", 1, ini.c_str()) != 0;
     if (GetPrivateProfileIntW(L"Car", L"ExperimentalReload", 0, ini.c_str())) {
         g_reloadFlowReady = PatchReloadFlow();
         g_api->hook_function(g_mod, "WaitForPause reload dispatch", (void*)(base + 0x964810), (void*)WaitPauseHook, (void**)&g_origWaitPause);
@@ -865,15 +912,17 @@ static DWORD WINAPI CarThread(LPVOID) {
         h4 != nullptr, h5 != nullptr, h6 != nullptr, g_forceCar.load());
     return 0;
 }
-static bool ValidateCarId(int id, char* reply, size_t size) {
-    std::wstring path;
+static std::wstring ActiveDatabasePath() {
     for (const wchar_t* directory : {L"mediaoverride", L"mediapc", L"media"}) {
         std::wstring candidate = std::wstring(g_api->game_dir) + L"\\" + directory + L"\\stripped\\gamedbRC.slt";
         if (GetFileAttributesW(candidate.c_str()) != INVALID_FILE_ATTRIBUTES) {
-            path = candidate;
-            break;
+            return candidate;
         }
     }
+    return {};
+}
+static bool ValidateCarId(int id, char* reply, size_t size, std::string* mediaOut) {
+    std::wstring path = ActiveDatabasePath();
     if (path.empty()) {
         Reply(reply, size, "error: cannot validate car ID %d: game database was not found; no swap performed", id);
         Log("car: ID validation failed: game database not found");
@@ -892,6 +941,7 @@ static bool ValidateCarId(int id, char* reply, size_t size) {
     bool found = rc == SQLITE_ROW;
     if (found) {
         const unsigned char* media = sqlite3_column_text(statement, 0);
+        if (mediaOut && media) *mediaOut = (const char*)media;
         Log("car: validated target=%d media=%s database=%s", id, media ? (const char*)media : "(null)", utf8.c_str());
     }
     if (!found) {
@@ -904,6 +954,35 @@ static bool ValidateCarId(int id, char* reply, size_t size) {
     }
     if (statement) sqlite3_finalize(statement);
     if (db) sqlite3_close(db);
+    return found;
+}
+static bool ValidateEventId(int id, int* track, char* reply, size_t size) {
+    std::wstring path = ActiveDatabasePath();
+    if (path.empty()) {
+        Reply(reply, size, "error: cannot validate event: active game database not found"); return false;
+    }
+    int bytes = WideCharToMultiByte(CP_UTF8, 0, path.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string utf8(bytes, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, path.c_str(), -1, &utf8[0], bytes, nullptr, nullptr);
+    sqlite3* db = nullptr;
+    sqlite3_stmt* statement = nullptr;
+    int rc = sqlite3_open_v2(utf8.c_str(), &db, SQLITE_OPEN_READONLY, nullptr);
+    if (rc == SQLITE_OK)
+        rc = sqlite3_prepare_v2(db,
+            "SELECT t.MediaTrack FROM AnthemEventRaces r JOIN AnthemEvents e ON e.AnthemEventId=r.AnthemEventId "
+            "JOIN Tracks t ON t.id=r.TrackId WHERE r.AnthemEventRaceId=? AND e.EventType=0 "
+            "AND t.MediaTrack IN (542,549) AND t.MediaName IN ('Anthem','Test03')", -1, &statement, nullptr);
+    if (rc == SQLITE_OK) rc = sqlite3_bind_int(statement, 1, id);
+    if (rc == SQLITE_OK) rc = sqlite3_step(statement);
+    bool found = rc == SQLITE_ROW;
+    if (found) *track = sqlite3_column_int(statement, 0);
+    else if (rc == SQLITE_DONE)
+        Reply(reply, size, "error: race ID %d is not a supported standard race; use event list (not a track ID)", id);
+    else
+        Reply(reply, size, "error: cannot validate event: %s", db ? sqlite3_errmsg(db) : "cannot open database");
+    if (statement) sqlite3_finalize(statement);
+    if (db) sqlite3_close(db);
+    if (!found) Log("event: %s", reply);
     return found;
 }
 static void CmdCar(const char* args, char* reply, size_t size) {
@@ -937,7 +1016,7 @@ static void CmdCar(const char* args, char* reply, size_t size) {
     if (!g_haveLoad) { Reply(reply, size, "error: no player car has been loaded yet"); return; }
     if (!g_reloadFlowReady || !g_origWaitPause) { Reply(reply, size, "error: live reload is experimental and disabled; use Test in game to restart"); return; }
     EnterCriticalSection(&g_cs);
-    bool busy = g_swapActive >= 0 || g_swapPending >= 0 || g_tpQueued || g_tpActive ||
+    bool busy = EventBusy() || SpawnBusy() || g_swapActive >= 0 || g_swapPending >= 0 || g_tpQueued || g_tpActive ||
                 g_trackPending >= 0 || g_trackActive >= 0 || !TrackSettled();
     if (!busy) {
         g_swapCompleted = g_swapFailed = -1;
@@ -984,6 +1063,9 @@ static void CmdHandler(void*, const char* name, const char* args, char* reply, s
     else if (!strcmp(name, "pipelines")) StudioPipelines::Command(args, reply, size);
     else if (!strcmp(name, "teleport")) CmdTeleport(args, reply, size);
     else if (!strcmp(name, "track")) CmdTrack(args, reply, size);
+    else if (!strcmp(name, "event")) CmdEvent(args, reply, size);
+    else if (!strcmp(name, "spawn")) CmdSpawn(args, reply, size);
+    else if (!_stricmp(name, "drivatar")) CmdDrivatar(args, reply, size);
     else if (!strcmp(name, "trace")) StudioTrace::Command(args, reply, size);
     else Reply(reply, size, "error: unknown command");
 }
@@ -994,7 +1076,7 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     FH2ModInfo info = {};
     info.size = sizeof info;
     info.name = "CarPackStudio";
-    info.version = "1.0.0";
+    info.version = "0.2.2";
     info.platform_version = "2.8.0";
     info.description = "Car Pack Studio test bench: crash guard, title skip, time/weather, console.";
     g_mod = api->register_mod(&info);
@@ -1037,6 +1119,9 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     api->add_command(g_mod, "pipelines", "pipelines on | off | status: actual D3D12 pipeline diagnostics", CmdHandler, nullptr);
     api->add_command(g_mod, "teleport", "Internal teleport transport; use tp Anthem <place> in Studio", CmdHandler, nullptr);
     api->add_command(g_mod, "track", "track 542 | 549 | status: native Anthem / TheIsland travel", CmdHandler, nullptr);
+    api->add_command(g_mod, "event", "event start <race id> | stop | status: experimental native race lifecycle", CmdHandler, nullptr);
+    api->add_command(g_mod, "spawn", "spawn car|ai|drivatar <carID> | swap <object ID>|reset|status | remove car <object ID> | clear | list [page] | status: four cars, load one at a time; swap driverless cars only", CmdHandler, nullptr);
+    api->add_command(g_mod, "drivatar", "drivatar pause|play|reset [object ID]: Studio AI only; drivatar <driverless object ID> swap | swap reset", CmdHandler, nullptr);
     api->add_command(g_mod, "trace", "trace start | stop | status: record native map/stateflow transitions", CmdHandler, nullptr);
     Log("CarPackStudio ready: crash guard %s", g_recover ? "recovering" : "logging");
     return 0;

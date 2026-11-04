@@ -1,12 +1,15 @@
 """Session console, history, scroll following and log filters."""
 import html
+import os
 from collections import deque
 
-from PySide6.QtCore import Qt, Signal, QEvent
+from PySide6.QtCore import Qt, Signal, QEvent, QSize
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QPlainTextEdit,
                                QLineEdit, QDialog, QComboBox, QListWidget, QLabel)
 
-from . import theme
+from . import theme, config
+from .completion import command_candidates
 
 
 class ConsoleWindow(QDialog):
@@ -19,6 +22,7 @@ class ConsoleWindow(QDialog):
 
 class Console(QWidget):
     submit = Signal(str)
+    detach_requested = Signal()
 
     def __init__(self):
         super().__init__()
@@ -34,13 +38,23 @@ class Console(QWidget):
         self.latest.clicked.connect(self.follow_latest)
         self.latest.hide()
         self.inp = QLineEdit()
-        self.inp.setPlaceholderText("Console - type help for commands")
+        self.inp.setPlaceholderText("Console - help for commands, Tab to complete")
         self.inp.returnPressed.connect(self._enter)
         self.inp.installEventFilter(self)
         self.filter_btn = QPushButton("Filters")
         self.filter_btn.clicked.connect(self.manage_filters)
+        self.detach_btn = QPushButton()
+        self.detach_btn.setFixedSize(28, 28)
+        self.detach_btn.setIconSize(QSize(18, 18))
+        self.set_detached(False)
+        self.detach_btn.setToolTip("Detach console (console 1)")
+        self.detach_btn.clicked.connect(self.detach_requested.emit)
         self.hist, self.hi = [], 0
         self.draft = ""
+        self.completion_provider = command_candidates
+        self._completion_state = None
+        self.inp.textChanged.connect(lambda text: self._reset_completion())
+        self.inp.cursorPositionChanged.connect(lambda old, new: self._reset_completion())
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
@@ -49,7 +63,15 @@ class Console(QWidget):
         controls.addWidget(self.latest)
         controls.addWidget(self.inp, 1)
         controls.addWidget(self.filter_btn)
+        controls.addWidget(self.detach_btn)
         lay.addLayout(controls)
+
+    def set_detached(self, detached):
+        label = "Attach" if detached else "Detach"
+        self.detach_btn.setIcon(QIcon(os.path.join(config.ROOT, "resources",
+                                                 "attach.svg" if detached else "detach.svg")))
+        self.detach_btn.setAccessibleName(label + " console")
+        self.detach_btn.setToolTip("%s console (console %d)" % (label, 0 if detached else 1))
 
     def _scrolled(self, value):
         if not self._writing:
@@ -159,6 +181,7 @@ class Console(QWidget):
         dialog.exec()
 
     def _enter(self):
+        self._reset_completion()
         text = self.inp.text().strip()
         if text:
             self.hist.append(text)
@@ -168,8 +191,48 @@ class Console(QWidget):
             self.submit.emit(text)
         self.inp.clear()
 
+    def _reset_completion(self):
+        self._completion_state = None
+
+    def complete(self, backwards=False):
+        text = self.inp.text()
+        if self.inp.cursorPosition() != len(text) or self.inp.hasSelectedText():
+            return
+        state = self._completion_state
+        if state is None:
+            try:
+                entries = self.completion_provider()
+            except (OSError, ValueError) as ex:
+                self.notice("Cannot load console completions: %s" % ex, theme.RED)
+                return
+            matches = sorted({entry for entry in [*entries, *self.hist]
+                              if entry.casefold().startswith(text.casefold())}, key=str.casefold)
+            if not matches:
+                return
+            common = os.path.commonprefix(matches)
+            if not backwards and len(common) > len(text):
+                result, index = common, -1
+            else:
+                index = len(matches) - 1 if backwards else 0
+                result = matches[index]
+            state = (matches, index)
+        else:
+            matches, index = state
+            index = (len(matches) - 1 if backwards and index == -1 else
+                     (index + (-1 if backwards else 1)) % len(matches))
+            result = matches[index]
+            state = (matches, index)
+        self.inp.setText(result)
+        self.inp.setCursorPosition(len(result))
+        self._completion_state = state
+
     def eventFilter(self, obj, event):
+        if obj is self.inp and event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Tab, Qt.Key_Backtab):
+            if not event.modifiers() & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier):
+                self.complete(event.key() == Qt.Key_Backtab or bool(event.modifiers() & Qt.ShiftModifier))
+                return True
         if obj is self.inp and event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Up, Qt.Key_Down):
+            self._reset_completion()
             if self.hist:
                 if self.hi == len(self.hist):
                     self.draft = self.inp.text()

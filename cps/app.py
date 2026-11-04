@@ -6,13 +6,13 @@ import sqlite3
 import sys
 import zipfile
 
-from PySide6.QtCore import Qt, QSortFilterProxyModel, QTimer
+from PySide6.QtCore import Qt, QSortFilterProxyModel, QTimer, QEvent
 from PySide6.QtGui import QAction, QStandardItem, QStandardItemModel, QColor, QFont, QIcon
 from PySide6.QtWidgets import (QApplication, QMainWindow, QTabWidget, QDockWidget, QTreeView, QWidget, QVBoxLayout,
                                QHBoxLayout, QLineEdit, QLabel, QPushButton, QFileDialog, QMessageBox, QInputDialog,
                                QMenu, QComboBox, QSpinBox, QFormLayout, QTableWidget, QTableWidgetItem, QPlainTextEdit,
                                QDialog, QDialogButtonBox, QCheckBox, QListWidget, QAbstractItemView, QHeaderView,
-                               QTextBrowser, QGroupBox, QStatusBar)
+                               QTextBrowser, QGroupBox, QStatusBar, QTabBar, QRubberBand)
 
 from . import APP_NAME, APP_VERSION, config, theme
 from .editors import TextEditorTab
@@ -25,10 +25,13 @@ from .wrapper import WrapperTab
 from .assets import TEXT_EXT, FILE_FILTER
 from .filetools import BinaryViewer, GameFilesManager
 from .audioviewer import BankViewer
+from .runtime_panels import MapsPanel, EventsPanel, SpawnedPanel, ModsPanel
+from .updates import UpdateChecker
 
 CREDITS = """
 <h2>Credits</h2>
-<p>Car Pack Studio bundles and builds on open-source work. Thank you to everyone below.</p>
+<p>Car Pack Studio builds on open-source work. Azimuth and third-party runtime mods are installed
+separately by the user; they are not redistributed. Thank you to everyone below.</p>
 <ul>
 <li><b>Azimuth 1.0.2</b> – the Forza Horizon 2 PC runtime (azimuth.exe) that makes the game run on Windows.</li>
 <li><b>FH2 Mod Platform 2.8.0</b> – mod loader, database/string/file override services and command pipe
@@ -37,7 +40,8 @@ CREDITS = """
 <li><b>Virtual Dashboard</b> – the telemetry HTTP API used by the debug overlay.</li>
 <li><b>DoorsUnlocked 0.1.5</b> – player-car lookup and animation-state playback, integrated into the CPS DLL.</li>
 <li><b>FH2NoPause 1.1.0</b> – keeps the wrapper running when it loses focus; its documented WGI controller
-hook and XInput mapping informed the Studio controller-script integration.</li>
+hook and XInput mapping informed the Studio controller-script integration.
+Optional NoPause, ShowFPS and FH2 Mouse &amp; Keyboard are by qiangqiang101.</li>
 <li><b>FM5 import tooling</b> (FM5import / Repack-ForzaZip / SwatchbinConverter) – the zip layout and database
 cloning knowledge this tool is based on.</li>
 <li><b>ForzaTech Studio</b> – inspiration for the model / swatchbin viewers; its <code>xg.dll</code> detiling library is used
@@ -47,70 +51,13 @@ for texture decoding.</li>
 Original build information is available with <code>bin\\ffmpeg.exe -version</code>.</li>
 <li><b>Qt for Python (PySide6)</b>, <b>NumPy</b>, <b>PyOpenGL</b>, <b>texture2ddecoder</b>, <b>Pillow</b>.</li>
 </ul>
-<p>Game content (apart from the application icon below) is NOT included.
+<p>Game content is NOT included.
 You must own Forza Horizon 2 and point the tool to your game's <code>Mount</code> folder.</p>
-<p>The application icon is an exported BarnFindWorking texture from the user's game, stored as
-<code>resources/app-icon.png</code> and multi-size <code>resources/app.ico</code> for executable packaging.
-No other game assets are bundled.</p>
-<p><b>Tools → Game files manager</b> browses mounted loose files and ZIP contents.
-Supported assets open in the same tabs as car Explorer files; <b>Open file from disk</b> uses the same readers.
-Swatchbins offer PNG export of the original decoded texture. Banks list their embedded samples, with
-<b>Play</b>, <b>Stop</b> and <b>Export WAV</b>. PCM16, mono/stereo XMA and MPEG are supported;
-event-only banks and unsupported codecs report an error rather than writing invalid audio.</p>
-<p>Binary inspection is read-only: material/shader bundles show blob metadata; PSO/VSO files show DXBC
-chunks; FH2 carbin files show scene headers and references; lights.bin shows attachments and light transforms.
-AVPINS opens as XML. Physics definitions and LDFB light presets provide raw header values, strings and
-paged bytes, not a semantic collision/preset editor. Unverified fields are explicitly left undecoded.</p>
-<p><b>Wrapper → Time &amp; Weather</b> controls the live test environment.
-<b>Wrapper → Car → Animations</b> lists the active car's animation clips and requests their states.
-Playable states are read directly from the car's active GSF graph.
-Playback selects and maintains the full-detail animation branch on the vehicle update thread,
-then waits 350 ms before sending the event, following Extra Options' roof-animation preparation.
-Clips without a matching state are listed but disabled (gauge and wiper clips are not necessarily
-independently playable states).
-Requests and faults appear in the wrapper console.</p>
-<p>Experimental live reload: once in free roam, enter <code>car 363</code> in the wrapper console.
-The native fast-travel loading/arrival sequence reloads the car at the same position.
-Use <code>car status</code> to check completion. Radio-left is reserved for reload during these test sessions.
-<code>car details</code> reports the source/target, reload stage, native streaming-job state and elapsed time.
-The console logs load progress every five seconds and reports a 60-second timeout without forcing
-an unfinished load to resume. After a timeout, stop/run the wrapper if loading does not recover.
-The <b>Recover previous car</b> button appears after 60 seconds. It restarts in the previous car
-at the normal spawn point, not at the exact pre-swap position. Recovery is never automatic.
-In the wrapper console, <code>car recover</code> immediately restarts in the previous car, and
-<code>car force</code> immediately restarts in the requested target car, even before the timeout.
-Neither command skips an unfinished native load. <code>recover 0/1</code> still toggles crash recovery.
-Unknown car IDs are rejected against the active game database without starting a reload.
-Up/Down in the console recalls commands from this CPS session.
-The wrapper's car label follows live telemetry, including swaps through Extra Options.
-Test in game sends the selected car ID to a running wrapper without restarting it.
-If the wrapper is stopped, it builds/installs the project and launches normally.
-New or changed pack assets require stopping and running the wrapper again.</p>
-<p><b>Map travel:</b> <code>track TheIsland</code> (549) and <code>track Anthem</code> (542)
-use the game's native travel flow without restarting Azimuth. <code>track list</code> lists maps;
-<code>track status</code> shows the loading stage and timeout state. Storm Island must be mounted
-in Azimuth; native DLC checks remain active. Enter free roam before requesting travel.
-<code>tp Anthem &lt;place&gt;</code> is for locations within the loaded mainland, not map changes.
-Physical radio-right input is reserved/disabled by the experimental travel flow.</p>
-<p><b>Console:</b> scrolling up pauses auto-follow; <b>Latest</b> resumes it.
-Repeated <code>[CarPackStudio] command: car status</code> polling lines are hidden from the console.
-Use <code>filter text "example"</code> or <code>filter resource "CarPackStudio"</code> to include matching logs;
-<code>filter -text "example"</code> and <code>filter -resource "CarPackStudio"</code> exclude matches.
-Matching is case-insensitive. Includes are OR within a field, AND between fields; exclusions always win.
-<code>filter remove</code> clears all filters. The <b>Filters</b> button manages the same rules and turns green
-when any are active; changes also refilter the last 5,000 retained entries. Command feedback stays visible.</p>
-<p><code>debug Azimuth</code> or <code>debug "mod name"</code> streams selected sources' available live logs,
-plus errors/critical messages from other sources (console filters still apply).
-Repeat to add sources; <code>debug off</code> restores normal logging.
-Azimuth tracing instruments D3D12 pipeline creation/cache-load API calls, including thread IDs, durations and HRESULTs.
-It is not a full native function trace. Mod debugging uses each mod's own log messages.
-<code>console 1</code> detaches the console and <code>console 0</code> reattaches it.
-Tools → Console detach / Console attach provides the same actions. Closing the separate console reattaches it,
-preserving history, filters, input and output. The detached console opens at 1000 × 700
-and can be resized, with a 640 × 400 minimum.</p>
-<p><b>Pack → Import car ZIP</b> adds an asset archive to the current pack. Select a database/physics donor,
-then edit the imported car's name, brand and ID in Car properties. The original ZIP is copied into the project
-and used instead of the donor's assets. Renaming requires the same number of characters as the ZIP name.</p>
+<p>The application icon is original vector artwork created for this tool: a garage and spanner badge.
+The editable source is <code>resources/app-icon.svg</code>, with generated PNG/ICO files for packaging.
+It contains no exported game pixels.</p>
+<p>Created by <a href="https://github.com/suderek22">suderek</a>.
+Visit <a href="https://fh2mods.com/">FH2MODS</a>.</p>
 """
 
 
@@ -134,6 +81,10 @@ class SettingsDialog(QDialog):
         b2 = QPushButton("Browse…")
         b2.clicked.connect(lambda: self._pick(self.az))
         self.sandbox = QLineEdit(s["sandbox_dir"])
+        self.dependencies = QLineEdit(s.get("dependency_source", ""))
+        self.dependencies.setPlaceholderText("Installed Azimuth + FH2 Mod Platform + Extra Options")
+        dependency_browse = QPushButton("Browse...")
+        dependency_browse.clicked.connect(lambda: self._pick(self.dependencies))
         self.port = QSpinBox()
         self.port.setRange(1, 65535)
         self.port.setValue(int(s["telemetry_port"]))
@@ -141,10 +92,14 @@ class SettingsDialog(QDialog):
         self.recover.setChecked(bool(s["crash_recover"]))
         self.boot = QCheckBox("Auto-skip menus (sends Enter until driving)")
         self.boot.setChecked(bool(s["boot_assist"]))
-        self.usave = QCheckBox("Sandbox: use the generated ultimate save (all cars, 999,999,999 credits)")
-        self.usave.setChecked(bool(s.get("ultimate_save", True)))
         self.festival = QCheckBox("Sandbox: spawn at the festival site (not the car meet)")
         self.festival.setChecked(bool(s.get("spawn_festival", True)))
+        self.updates = QCheckBox("Check updates automatically at startup (contacts GitHub)")
+        self.updates.setChecked(bool(s.get("check_updates", False)))
+        check_updates = QPushButton("Check updates now")
+        check_updates.setEnabled(parent is not None)
+        if parent is not None:
+            check_updates.clicked.connect(lambda: parent.update_checker.check())
         self.dbgmap = QLineEdit(s["debug_map"])
         self.dbgmap.setPlaceholderText("(planned) track/entity group to force on start")
         self.dbgmap.setEnabled(False)
@@ -163,14 +118,24 @@ class SettingsDialog(QDialog):
         r2.addWidget(b2)
         f.addRow("Existing Azimuth folder", r2)
         f.addRow("Sandbox folder", self.sandbox)
+        dependency_row = QHBoxLayout()
+        dependency_row.addWidget(self.dependencies)
+        dependency_row.addWidget(dependency_browse)
+        f.addRow("Copy dependencies from", dependency_row)
         f.addRow("Telemetry port", self.port)
         f.addRow("", self.recover)
         f.addRow("", self.boot)
-        f.addRow("", self.usave)
+        f.addRow("", QLabel("Sandbox always regenerates the test save from the shipped template."))
         f.addRow("", self.festival)
+        f.addRow("", self.updates)
+        f.addRow("", check_updates)
         f.addRow("Debug map", self.dbgmap)
-        note = QLabel("Sandbox = a private copy of Azimuth with its own empty saves (recommended).\n"
-                      "Existing = use your Azimuth folder; its launcher setting display=windowed is set for embedding.")
+        note = QLabel("Required separately: Azimuth, FH2 Mod Platform and Extra Options.\n"
+                      "Sandbox copies dependencies from your installed Azimuth folder, not saves or game files.\n"
+                      "Optional: ShowFPS, FH2 Mouse & Keyboard, NoPause (qiangqiang101).\n"
+                      "Use Mods > Import dependencies for immediate setup, or Open Studio Mods to install manually.\n"
+                      "Existing = use your Azimuth folder directly. Close the game before importing.")
+        note.setWordWrap(True)
         note.setStyleSheet("color:%s;" % theme.FG_DIM)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept)
@@ -191,9 +156,11 @@ class SettingsDialog(QDialog):
         s.update(mount=self.mount.text().strip(), runtime_mode=self.mode.currentText(),
                  launch_arguments=self.launch_args.text().strip(),
                  azimuth_dir=self.az.text().strip(), sandbox_dir=self.sandbox.text().strip(),
+                 dependency_source=self.dependencies.text().strip(),
                  telemetry_port=self.port.value(), crash_recover=self.recover.isChecked(),
-                 boot_assist=self.boot.isChecked(), ultimate_save=self.usave.isChecked(), spawn_festival=self.festival.isChecked(),
+                 boot_assist=self.boot.isChecked(), ultimate_save=True, spawn_festival=self.festival.isChecked(),
                  debug_map=self.dbgmap.text())
+        s["check_updates"] = self.updates.isChecked()
         return s
 
 
@@ -260,11 +227,17 @@ class CarBrowser(QWidget):
         if not idx.isValid():
             return
         car = self.car_at(idx)
+        self.menu_for(car).exec(self.tree.viewport().mapToGlobal(pos))
+
+    def menu_for(self, car):
         m = QMenu(self)
         m.addAction("Open in Explorer", lambda: self.owner.open_car(car))
         m.addAction("Add to pack as new car (clone)…", lambda: self.owner.add_clone(car))
         m.addAction("Test in game", lambda: self.owner.test_base_car(car))
-        m.exec(self.tree.viewport().mapToGlobal(pos))
+        for label, command in (("Spawn", "spawn car"), ("Spawn Drivatar", "spawn ai")):
+            action = m.addAction(label, lambda checked=False, cmd=command: self.owner.spawn_car(car, cmd))
+            action.setEnabled(self.owner.wrapper.rt.running())
+        return m
 
 
 class Explorer(QWidget):
@@ -466,6 +439,12 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("%s %s" % (APP_NAME, APP_VERSION))
         self.resize(1600, 960)
+        self.setDockOptions(self.dockOptions() | QMainWindow.AllowNestedDocks |
+                            QMainWindow.AllowTabbedDocks)
+        self.setDockOptions(self.dockOptions() & ~QMainWindow.GroupedDragging)
+        self._dock_tab_drag = None
+        self.installEventFilter(self)
+        self._dock_drop_preview = QRubberBand(QRubberBand.Rectangle, self)
         self.s = config.load()
         self.game = None
         self.project = None
@@ -481,6 +460,7 @@ class MainWindow(QMainWindow):
         self.wrapper.after_cb = self._after_run
         self.wrapper.car_cb = self._selected_car_id
         self.wrapper.car_title_cb = self._car_title
+        self.wrapper.status.connect(lambda message: self.statusBar().showMessage(message, 10000))
         self.tabs.addTab(self.wrapper, "Wrapper")
         self.tabs.tabBar().setTabButton(0, self.tabs.tabBar().ButtonPosition.RightSide, None)
 
@@ -495,10 +475,17 @@ class MainWindow(QMainWindow):
         self.output = QPlainTextEdit()
         self.output.setReadOnly(True)
 
-        self._dock("Explorer", self.explorer, Qt.LeftDockWidgetArea)
+        explorer_dock = self._dock("Explorer", self.explorer, Qt.LeftDockWidgetArea)
         d2 = self._dock("Cars", self.browser, Qt.LeftDockWidgetArea)
-        self.tabifyDockWidget(self.findChildren(QDockWidget)[0], d2)
-        self.findChildren(QDockWidget)[0].raise_()
+        self.tabifyDockWidget(explorer_dock, d2)
+        self.maps_panel = MapsPanel(self)
+        self.events_panel = EventsPanel(self)
+        self.spawned_panel = SpawnedPanel(self)
+        self.mods_panel = ModsPanel(self)
+        for title, panel in (("Maps", self.maps_panel), ("Events", self.events_panel),
+                             ("Spawned", self.spawned_panel), ("Mods", self.mods_panel)):
+            self.tabifyDockWidget(explorer_dock, self._dock(title, panel, Qt.LeftDockWidgetArea))
+        explorer_dock.raise_()
         pk = QWidget()
         pl = QVBoxLayout(pk)
         pl.setContentsMargins(4, 4, 4, 4)
@@ -515,10 +502,14 @@ class MainWindow(QMainWindow):
                 b.setObjectName("primary")
             bb.addWidget(b)
         pl.addLayout(bb)
-        self._dock("Pack", pk, Qt.RightDockWidgetArea)
-        self._dock("Car properties", self.props, Qt.RightDockWidgetArea)
+        self._dock("Pack", pk, Qt.RightDockWidgetArea).hide()
+        self._dock("Car properties", self.props, Qt.RightDockWidgetArea).hide()
         self._dock("Output", self.output, Qt.BottomDockWidgetArea)
         self.setStatusBar(QStatusBar())
+        self.version_label = QLabel("%s %s" % (APP_NAME, APP_VERSION))
+        self.statusBar().addPermanentWidget(self.version_label)
+        self.update_checker = UpdateChecker(self)
+        self.update_checker.message.connect(self._update_message)
         self._menus()
         self.statusBar().showMessage("Ready")
         QTimer.singleShot(100, self._startup)
@@ -527,9 +518,90 @@ class MainWindow(QMainWindow):
         d = QDockWidget(title, self)
         d.setWidget(w)
         d.setObjectName(title)
-        d.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
+        d.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable |
+                      QDockWidget.DockWidgetClosable)
         self.addDockWidget(area, d)
         return d
+
+    def eventFilter(self, obj, event):
+        if (obj is self and event.type() == QEvent.ChildPolished and
+                isinstance(event.child(), QTabBar)):
+            event.child().installEventFilter(self)
+        if (event.type() == QEvent.MouseButtonPress and isinstance(obj, QTabBar) and
+                obj.parent() is self and event.button() == Qt.LeftButton):
+            index = obj.tabAt(event.position().toPoint())
+            if index >= 0:
+                dock = next((dock for dock in self.findChildren(QDockWidget)
+                             if dock.objectName() == obj.tabText(index)), None)
+                if dock is not None:
+                    obj.setCurrentIndex(index)
+                    self._dock_tab_drag = (obj, dock, event.globalPosition().toPoint(), False)
+                    obj.grabMouse()
+                    return True
+        elif self._dock_tab_drag and event.type() == QEvent.MouseMove:
+            bar, dock, origin, dragging = self._dock_tab_drag
+            point = event.globalPosition().toPoint()
+            outside = not bar.rect().adjusted(-8, -8, 8, 8).contains(bar.mapFromGlobal(point))
+            if dragging or (outside and (point - origin).manhattanLength() >= QApplication.startDragDistance()):
+                self._dock_tab_drag = (bar, dock, origin, True)
+                local = self.mapFromGlobal(point)
+                if self.rect().contains(local):
+                    area = self._dock_drop_area(local)
+                    rect = self.centralWidget().geometry()
+                    if area == Qt.LeftDockWidgetArea:
+                        rect.setWidth(rect.width() // 3)
+                    elif area == Qt.RightDockWidgetArea:
+                        rect.setLeft(rect.right() - rect.width() // 3)
+                    elif area == Qt.TopDockWidgetArea:
+                        rect.setHeight(rect.height() // 3)
+                    else:
+                        rect.setTop(rect.bottom() - rect.height() // 3)
+                    self._dock_drop_preview.setGeometry(rect)
+                    self._dock_drop_preview.show()
+                    self._dock_drop_preview.raise_()
+                else:
+                    self._dock_drop_preview.hide()
+                return True
+            target = bar.tabAt(bar.mapFromGlobal(point))
+            if target >= 0 and (point - origin).manhattanLength() >= QApplication.startDragDistance():
+                bar.moveTab(bar.currentIndex(), target)
+            return True
+        elif (self._dock_tab_drag and event.type() == QEvent.MouseButtonRelease and
+              event.button() == Qt.LeftButton):
+            bar, dock, origin, dragging = self._dock_tab_drag
+            self._dock_tab_drag = None
+            bar.releaseMouse()
+            self._dock_drop_preview.hide()
+            if dragging:
+                point = event.globalPosition().toPoint()
+                QTimer.singleShot(0, lambda: self._drop_dock_tab(dock, point))
+            return True
+        elif (self._dock_tab_drag and event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape):
+            self._dock_tab_drag[0].releaseMouse()
+            self._dock_tab_drag = None
+            self._dock_drop_preview.hide()
+            return True
+        return super().eventFilter(obj, event)
+
+    def _dock_drop_area(self, point):
+        center = self.centralWidget().geometry()
+        distances = {
+            Qt.LeftDockWidgetArea: abs(point.x() - center.left()),
+            Qt.RightDockWidgetArea: abs(point.x() - center.right()),
+            Qt.TopDockWidgetArea: abs(point.y() - center.top()),
+            Qt.BottomDockWidgetArea: abs(point.y() - center.bottom()),
+        }
+        return min(distances, key=distances.get)
+
+    def _drop_dock_tab(self, dock, point):
+        local = self.mapFromGlobal(point)
+        if self.rect().contains(local):
+            self.addDockWidget(self._dock_drop_area(local), dock)
+        else:
+            dock.setFloating(True)
+            dock.move(point)
+        dock.show()
+        dock.raise_()
 
     def _menus(self):
         mb = self.menuBar()
@@ -555,6 +627,19 @@ class MainWindow(QMainWindow):
         r = mb.addMenu("&Wrapper")
         r.addAction(QAction("Test selected car in game", self, triggered=self.test_in_game, shortcut="F5"))
         r.addAction(QAction("Stop game", self, triggered=lambda: self.wrapper.stop(), shortcut="Shift+F5"))
+        wrapper_settings = r.addMenu("Settings")
+        self.travel_binds_action = QAction("Travel test binds", self, checkable=True)
+        self.travel_binds_action.setChecked(self.s.get("travel_test_binds", True))
+        self.travel_binds_action.setToolTip("Reserve radio buttons for testing; off restores normal radio. "
+                                           "Console travel/reload remain available. Applies on next run.")
+        self.travel_binds_action.toggled.connect(self._travel_binds_changed)
+        self.wrapper.running_changed.connect(lambda running: self.travel_binds_action.setEnabled(not running))
+        wrapper_settings.addAction(self.travel_binds_action)
+        teleport = r.addMenu("&Teleport")
+        self.teleport_list = teleport.addMenu("List")
+        self.teleport_list.aboutToShow.connect(self._teleport_menu)
+        teleport.addAction("My places...", self.wrapper.show_places)
+        r.addAction("Volume...", self.wrapper_volume)
         w = r.addMenu("Time && &Weather")
         w.addAction(QAction("Time and weather…", self, triggered=self.time_weather, shortcut="Ctrl+W"))
         for text, line in (("Sunrise (06:00)", "time 6"), ("Noon (12:00)", "time 12"), ("Sunset (19:00)", "time 19"),
@@ -585,6 +670,28 @@ class MainWindow(QMainWindow):
             self, APP_NAME, "%s %s\nBuild car packs for Forza Horizon 2 (Azimuth)." % (APP_NAME, APP_VERSION))))
 
     # ----------------------------------------------------------- startup / settings
+    def _travel_binds_changed(self, enabled):
+        self.s["travel_test_binds"] = enabled
+        config.save(self.s)
+        self.wrapper.console.notice("Travel test binds %s for the next run; console travel and reload remain enabled." %
+                                    ("enabled" if enabled else "disabled (normal radio)"))
+
+    def _teleport_menu(self):
+        from .travel_ui import populate_places
+        populate_places(self.teleport_list, self.wrapper)
+
+    def wrapper_volume(self):
+        from .volume import validate_volume
+        try:
+            current = validate_volume(self.s.get("wrapper_volume", 1.0))
+        except ValueError as ex:
+            QMessageBox.warning(self, "Wrapper volume", str(ex))
+            return
+        value, ok = QInputDialog.getDouble(self, "Wrapper volume", "Volume (0 = mute, 1 = full):",
+                                         current, 0, 1, 3, step=0.1)
+        if ok:
+            self.wrapper.send("volume %.3f" % value)
+
     def log(self, msg):
         self.output.appendPlainText(msg)
 
@@ -595,6 +702,12 @@ class MainWindow(QMainWindow):
         lp = self.s.get("last_project")
         if lp and os.path.exists(lp):
             self._load_project(lp)
+        if self.s.get("check_updates", False):
+            self.update_checker.check(manual=False)
+
+    def _update_message(self, message):
+        self.log(message)
+        self.statusBar().showMessage(message, 10000)
 
     def settings(self, first=False):
         if first:
@@ -602,12 +715,27 @@ class MainWindow(QMainWindow):
                                     "'media'). Game files are not shipped with this tool.")
         d = SettingsDialog(self.s, self)
         if d.exec():
-            self.s.update(d.result_settings())
+            result = d.result_settings()
+            if self.wrapper.rt.running() and any(
+                    result[key] != self.s[key] for key in ("mount", "runtime_mode", "azimuth_dir", "sandbox_dir",
+                                                           "telemetry_port", "dependency_source")):
+                QMessageBox.warning(self, APP_NAME, "Stop the wrapper before changing its runtime, Mount or telemetry port.")
+                return
+            previous_updates = self.s.get("check_updates", False)
+            self.s.update(result)
             config.save(self.s)
             self.wrapper.s = self.s
+            if not self.wrapper.rt.running():
+                self.wrapper.rt.s = self.s
             self.load_game()
+            if self.s.get("check_updates", False) and not previous_updates:
+                self.update_checker.check(manual=False)
 
     def load_game(self):
+        self.maps_panel.refresh()
+        self.events_panel.refresh()
+        self.mods_panel.refresh()
+        self.wrapper.refresh_optional_mods()
         m = self.s["mount"]
         if not GameData.valid(m):
             self.statusBar().showMessage("Game Mount not set")
@@ -767,6 +895,13 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Car uninstalled from the game database", 5000)
 
     # ----------------------------------------------------------- cars
+    def spawn_car(self, car, command="spawn car"):
+        if not self.wrapper.rt.running():
+            self.wrapper.console.notice("error: start the wrapper before spawning cars.", theme.RED)
+            return
+        self.wrapper.send("%s %d" % (command, car.id))
+        self.tabs.setCurrentWidget(self.wrapper)
+
     def _car_title(self, media):
         key = media.casefold()
         car = next((c for c in (self.project.cars if self.project else []) if c.media.casefold() == key), None)
@@ -1122,7 +1257,12 @@ class MainWindow(QMainWindow):
         if not out:
             return False
         self._sync_extra_cars()
-        self.wrapper.rt.prepare(self.log)
+        try:
+            self.wrapper.rt.prepare(self.log)
+        except (OSError, ValueError) as ex:
+            self.log("INSTALL FAILED: %s" % ex)
+            QMessageBox.warning(self, APP_NAME, "Cannot prepare runtime:\n%s" % ex)
+            return False
         name = install_pack(out, self.s["mount"], self._mods_dir())
         self.log("Installed pack '%s' → %s and Mount\\mediapc" % (name, self._mods_dir()))
         self.statusBar().showMessage("Pack installed", 4000)
@@ -1349,6 +1489,7 @@ class MainWindow(QMainWindow):
         d.setWindowTitle("Credits")
         v = QVBoxLayout(d)
         tb = QTextBrowser()
+        tb.setOpenExternalLinks(True)
         tb.setHtml(CREDITS)
         v.addWidget(tb)
         d.resize(620, 520)
@@ -1363,7 +1504,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "How to", "Cannot read the bundled guide:\n%s" % ex)
             return
         dialog = QDialog(self)
-        dialog.setWindowTitle("How to - Car Pack Studio 0.1.0 Experimental")
+        dialog.setWindowTitle("How to - %s %s" % (APP_NAME, APP_VERSION))
         dialog.resize(1000, 780)
         dialog.setMinimumSize(640, 480)
         dialog.setSizeGripEnabled(True)
@@ -1378,10 +1519,18 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def closeEvent(self, e):
+        if self._dock_tab_drag:
+            self._dock_tab_drag[0].releaseMouse()
+            self._dock_tab_drag = None
+            self._dock_drop_preview.hide()
+        self.removeEventFilter(self)
+        for bar in self.findChildren(QTabBar):
+            bar.removeEventFilter(self)
         for i in range(self.tabs.count()):
             widget = self.tabs.widget(i)
             if isinstance(widget, BankViewer):
                 widget.shutdown()
+        self.update_checker.shutdown()
         self.wrapper.shutdown()
         config.save(self.s)
         super().closeEvent(e)

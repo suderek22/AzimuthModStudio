@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Car Pack Studio 0.2.2-beta - How to</title>
+<style>body{font-family:Segoe UI,sans-serif;color:#DFE1E5;background:#2B2D30;}
+h1,h2,h3{color:#8CB4FF;}code,pre{font-family:Consolas,monospace;background:#1E1F22;}
+td,th{padding:7px;border:1px solid #51545A;}a{color:#8CB4FF;}</style></head><body>
+<h1>Car Pack Studio 0.2.2-beta</h1>
+<h2>Experimental release - How to</h2>
+<p>Car Pack Studio builds multi-car packs for Forza Horizon 2 on Azimuth and provides a dark desktop
+workspace for inspecting assets, editing car data and testing vehicles in the embedded game.
+This is an experimental tool. Back up your game overrides, projects and saves before use.
+Use a private sandbox runtime and test on copies of your files.</p>
+<h2>1. Extract and set up</h2>
+<ol><li>Extract the entire release ZIP into a writable folder. Keep the _internal folder beside the
+executable; it holds runtime, save_template, resources, bin and application libraries.
+Do not run directly inside the ZIP.</li>
+<li>Run <b>Car Pack Studio.exe</b>. Python does not need to be installed.</li>
+<li>Choose your owned game's <b>Mount</b> folder: the folder containing
+<code>media\stripped\gamedbRC.slt</code>. Base game content is not included.</li>
+<li>In <b>File &gt; Settings</b>, leave Runtime set to <b>sandbox</b> for isolated testing.
+Install Azimuth, FH2 Mod Platform and Extra Options separately into one Azimuth folder first
+(tested baseline: 1.0.2, 2.8.0, 0.3.2). Set <b>Copy dependencies from</b> to that folder,
+or use <b>Mods &gt; Import dependencies</b>. The bundled save template supplies the generated test save.
+Missing required files block wrapper launch, not editing or building packs.</li>
+<li>Select <b>existing</b> only when intentionally using another Azimuth installation, then choose its folder.
+Back up that installation first: mods/settings and pack files are installed into that runtime.</li></ol>
+<p>Sandbox settings include initial spawn location, title-screen assistance,
+crash recovery and telemetry HTTP port. The test save is always regenerated from the shipped template
+on preparation, even with older settings that disabled it; do not use
+the sandbox for a career save you want to keep. The garage uses a curated maximum of 250 entries;
+custom test cars and the selected start car are included as needed. Credits default to 999,999,999.</p>
+<h2>2. Workspace</h2>
+<p>Right-click a dock title and click a panel name to show or hide that panel.
+<b>Pack</b> and <b>Car properties</b> are hidden by default; turn them on from this menu for pack editing.</p>
+<ul><li><b>Cars:</b> the mounted base/asset-overlay car catalogue. Columns are ID, Car, Media and Source.
+Click a header to sort, or search by ID/name/media/source. Right-click a car to open it in Explorer,
+clone it into the pack or test it. With the wrapper running, <b>Spawn</b> creates a driverless car and
+<b>Spawn Drivatar</b> creates generic AI, initially paused. The shared limit is four cars; wait for each
+car to activate before spawning another. This catalogue is based on the base database; custom project cars
+are managed in the Pack panel.</li>
+<li><b>Explorer:</b> files belonging to the open vehicle. Filter by path/name, double-click to open a tab,
+or right-click to open, export original bytes, replace from a file, or revert a project override.
+Modified entries are highlighted.</li>
+<li><b>Pack:</b> cars in the current project, plus Import car ZIP, Build, Install and Test in game.
+Select a row to edit its properties; double-click to inspect that car's files.</li>
+<li><b>Car properties:</b> in-game name, short name, year, existing/new brand, car ID, thumbnail reference
+and additional Data_Car column overrides. Media name and donor are displayed. Click <b>Apply</b> to save
+changes into the project.</li>
+<li><b>Middle tabs:</b> the Wrapper and opened editors/viewers. Close a document with its tab close button.
+Unsaved text edits prompt before closing.</li>
+<li><b>Output:</b> project/build/install diagnostics. Dock panels can be moved or floated.</li></ul>
+<h3>Runtime tabs beside Explorer and Cars</h3>
+<ul><li><b>Maps:</b> keyed by world ID (Anthem 542, TheIsland 549).
+Right-click for <b>Change map</b> or <b>Teleport</b>, including your custom points marked [custom].
+If necessary, travel completes first; the teleport is sent only after confirmed settled arrival.
+Failed/timed-out travel cancels the follow-up. Stop cancels it too. Storm Island must be mounted.
+Custom-map bookmark IDs are retained, but native travel currently supports only 542 and 549.
+Placeholder and race-route database rows are not additional playable maps.</li>
+<li><b>Events:</b> supported standard races grouped by map, keyed by AnthemEventRaceId.
+Right-click to start a specific event (automatically travelling to its map first).
+Use <b>Event stop</b> or the <code>event stop</code> console command to return to free roam
+once the race is running; wait for its intro/countdown to finish first.
+These are real events with normal save/progression rules.</li>
+<li><b>Spawned:</b> automatically tracks Studio-owned native objects, including console changes.
+Object IDs differ from car IDs. Right-click to delete, swap to an active driverless car, return to your original
+car, or pause/play/reset an AI car. Clear all removes only Studio spawns. Follow/chase remain unavailable.
+Stale native snapshots are labelled and row actions disabled. Busy command pipes use bounded native waits;
+an outage is logged once, with a recovery notice when polling resumes. Sent commands are never replayed
+automatically after a reply timeout. Clear spawns before map travel,
+teleport, events or player-car reload; the GUI never silently deletes them for you.</li>
+<li><b>Mods:</b> installed runtime mods, platform, Extra Options and packs with their reported versions.
+Offline versions are marked last-session; missing version metadata is marked unknown.
+Right-click to open the installed INI directly in an editor tab. Save normally; most changes apply on restart.</li></ul>
+<p>Wrapper preparation still manages the Studio-generated INI, telemetry port and FPS toggle.
+Change those values through wrapper/settings controls; preparation reapplies them on the next run.</p>
+<p><b>Mods &gt; Open Studio Mods</b> opens the selected runtime's fh2-mods folder.
+<b>Import dependencies</b> copies known required files and Azimuth data\bin support files from an installed
+Azimuth folder. Installed optional ShowFPS, FH2 Mouse &amp; Keyboard and NoPause (qiangqiang101) are
+also copied. Saves, caches, logs, game files and unknown mods are not imported.
+The first import copies launcher/DLC paths; later imports preserve destination INI/DAT settings.
+Close games using either folder before import. Required dependency file detection does not certify versions.
+Azimuth, the mod platform and Extra Options are installed at the runtime root/data\bin, not in fh2-mods.</p>
+<p>The camera icon at the wrapper toolbar's upper right saves the native game client to
+<code>%APPDATA%\CarPackStudio\screenshots</code> as a uniquely named PNG, at the client window's actual
+physical-pixel resolution (no scaling or editor chrome), embedded or detached.
+It does not upscale the embedded client to a different internal render resolution.
+The game must not be minimized; failed or black capture surfaces report an error.
+The Studio telemetry overlay is off by default and is not included in client screenshots.</p>
+<p>The application's version is always shown in the bottom-right status bar.
+In <b>File &gt; Settings</b>, <b>Check updates now</b> checks GitHub's latest published release.
+Optional automatic startup checking is off by default. A newer release shows a popup linking to
+<a href="https://github.com/suderek22/AzimuthModStudio">AzimuthModStudio on GitHub</a>.
+No update is automatically downloaded or installed. Network errors are reported in Output/status.</p>
+<h2>3. Create and edit a pack</h2>
+<ol><li>Use <b>File &gt; New pack project</b> (Ctrl+N), choose a name and a project folder.
+Use <b>Open project</b> (Ctrl+O) to reopen a .cpsproj file; <b>Save project</b> saves its metadata.</li>
+<li>In Cars, right-click a donor and choose <b>Add to pack as new car (clone)</b>.
+The donor supplies the database/physics configuration and asset source.</li>
+<li>Alternatively, use <b>Pack &gt; Import car ZIP</b>. Choose an asset archive containing a root
+.carbin and .modelbin files, then select a database/physics donor.
+The ZIP is copied into the project's sources folder, and its assets replace the donor's asset source.</li>
+<li>Choose a unique numeric car ID and a unique media name. Renaming binary asset references requires
+the media name to have the same character count as the asset-source archive name.
+Names use letters, numbers, underscore or hyphen.</li>
+<li>Edit properties, click Apply, open files in Explorer, and save text edits or replace assets.
+Repeat to add multiple cars to the same pack.</li></ol>
+<p>Project metadata is stored in .cpsproj. Per-car overrides live under <code>cars\&lt;media&gt;</code>;
+imported ZIP sources live under <code>sources</code>. Keep these folders with the project.</p>
+<h3>Remove versus uninstall</h3>
+<p>Right-click a particular car in the <b>Pack</b> panel:</p>
+<ul><li><b>Remove car from pack:</b> removes it from the project after confirmation. Its asset tabs close,
+discarding unsaved edits as stated in the confirmation. Source/override files stay on disk.
+An already-installed copy is unchanged.</li>
+<li><b>Uninstall car from game database:</b> removes only that custom car from an installed CPS pack,
+its manifest entry and generated override database rows. Stop the wrapper and close other game instances
+first. Other cars and the base database are preserved. The car stays in the project; installing/testing
+the project again installs it again. Changes apply on the next launch.
+Base-game database cars cannot be uninstalled with this action.</li></ul>
+<p><b>Pack &gt; Uninstall a pack</b> removes a whole installed pack instead.</p>
+<h2>4. Build, install and distribute a car pack</h2>
+<ol><li>Click <b>Build</b> to generate the project's build folder with asset ZIPs, database SQL,
+strings and pack metadata. Review Output for errors.</li>
+<li>Click <b>Install</b> to build and install into the selected runtime's CarPacks folder and the game's
+Mount\mediapc overrides. The original base database is not edited.</li>
+<li><b>Pack &gt; Show generated SQL</b> opens the SQL/string changes for inspection.</li>
+<li><b>Pack &gt; Export distributable zip</b> writes the pack's build output and installation README.
+The destination requires FH2 Mod Platform 2.8.0, Extra Options with media overrides enabled,
+and CarPackLoader.dll supplied with this tool's runtime. Follow the generated manifest instructions.</li></ol>
+<p>Pack installation persists on disk. Testing before a manual install still builds/installs the pack:
+it is not a session-only in-memory database. Rebuild and restart after asset/database changes.</p>
+<h2>5. Editors and file viewers</h2>
+<ul><li><b>Text:</b> XML/XAML, AVPINS, TXT, LOG, INI, SQL and JSON. Use Find (Enter for next result),
+Ctrl+F to focus Find, Save/Ctrl+S to save, and XML Format/validation for XML documents.
+Car edits become project overrides. Loose-file edits save directly to the chosen disk file;
+archive entries opened through Game files manager are read-only.</li>
+<li><b>Swatchbin:</b> view the decoded texture on a checkerboard, toggle RGBA channels, Fit,
+wheel-zoom and drag-pan. Double-click to fit. <b>Export PNG</b> writes the original decoded RGBA image,
+independent of channel-preview toggles.</li>
+<li><b>Modelbin:</b> left mouse orbits, right/middle mouse pans, wheel zooms.
+Toggle individual meshes, Show all/Hide all, Wireframe and Unlit normals.</li>
+<li><b>Binary inspection:</b> materialbin/shaderbin bundle structure and metadata;
+PSO/VSO DXBC chunks; FH2 carbin scene header and asset references; lights.bin attachments and transforms.
+Physics definitions, binary light presets and other binary files have read-only header/string/byte inspection.
+Bytes are paged in 64-KiB blocks; strings/references include byte offsets.</li>
+<li><b>Audio banks:</b> select a sample, Play/Stop, or Export WAV. Double-click a sample to play.
+PCM16, mono/stereo XMA and MPEG sample decoding are included. Event-only banks contain no audio samples;
+unsupported codecs report an error. Conversion happens through a bounded background decoder process.</li></ul>
+<h2>6. Tools menu</h2>
+<p><b>Game files manager</b> opens a reusable tab rooted at Mount. Browse supported loose files on the left,
+select a ZIP to list supported entries on the right, and filter archive entries by name.
+Double-click a file/entry to open it in the appropriate viewer. Choose folder changes the browser root.
+<b>Open file from disk</b> uses the same readers; choosing a ZIP opens its archive listing.
+<b>Open game logs</b> opens the current platform.log snapshot.
+<b>Console detach/attach</b> moves the same console between the Wrapper and a separate resizable window.
+The small square <b>Detach/Attach</b> icon beside the console input does the same, preserving its draft,
+history and output (equivalent to <code>console 1</code>/<code>console 0</code>).</p>
+<h2>7. Test in the Wrapper</h2>
+<ol><li>Select the intended car and use <b>Test in game</b> (F5) or <b>Run</b>.
+The selected sandbox runtime, mods and test save are prepared before launch.</li>
+<li>The game starts inside the Wrapper with launcher bypass and title-screen assistance.
+Use an XInput controller for game input, or install optional FH2 Mouse &amp; Keyboard.
+Initial embedding waits for the input mods to discover the top-level game window, then sets native
+focus on the embedded child. A 20-second readiness timeout reports a warning instead of hanging startup.
+If an external input mod still cannot initialize, use game-window Detach/Attach and inspect platform.log.</li>
+<li>The toolbar provides Run, Stop, game-window Detach/Attach, Skip title screen,
+Telemetry overlay and ShowFPS. ShowFPS is greyed out when its DLL is absent. Its saved setting applies on the next run;
+F11 toggles its overlay in game. The running-car label follows telemetry.</li>
+<li>The game-window Detach/Attach control is a square icon with a tooltip.
+<b>Wrapper &gt; Settings &gt; Travel test binds</b> reserves physical radio controls for the experimental flow.
+Uncheck it while stopped and then Run to change radio stations normally.
+Console/GUI car reload, teleport and map travel remain available with either setting.
+This startup setting cannot change during a run.</li>
+<li>Use <b>Wrapper &gt; Time &amp; Weather</b> (Ctrl+W) for sliders, freeze and weather presets.
+Use <b>Wrapper &gt; Car &gt; Animations</b> to list/play the active car's animation states.</li>
+<li><b>Wrapper &gt; Teleport &gt; List</b> lists built-in places followed by custom ones.
+It uses the same confirmed map-change-then-teleport sequence as Maps.
+<b>My places</b> opens the bookmark manager with map ID, map name, name and X/Y/Z columns.
+Enter a name and choose <b>Add current position</b> to capture the settled car's coordinates;
+select a row to teleport there or delete that exact map-qualified bookmark.</li>
+<li><b>Wrapper &gt; Volume</b> sets saved wrapper-process audio volume from 0 to 1, including decimals.
+It applies when the game's audio session appears, without changing system master or other processes.</li>
+<li>Testing another car while already running sends its car ID to live reload instead of restarting.
+New/changed assets or database rows require Stop then Run.</li>
+<li><b>Stop</b> or Shift+F5 stops the owned game process. Closing Car Pack Studio also stops its wrapper.</li></ol>
+<p>Live swaps use the native fast-travel loading/arrival flow in free roam and preserve the position.
+Radio-left is reserved for that reload flow in these test sessions.
+Progress is logged, and a 60-second timeout offers <b>Recover previous car</b>.
+Recovery is explicit and restarts at the normal spawn point, not the exact old coordinates.
+Do not treat crash recovery as protection against every possible engine fault.</p>
+<h2>8. Console commands</h2>
+<p>Press Enter to submit. Up/Down recalls commands for this application session and restores a draft when
+you return past the newest entry. <b>Tab</b> completes at the end of the input line, first extending
+the shared prefix and then cycling matches; <b>Shift+Tab</b> cycles backwards.
+Suggestions include subcommands, map destinations, quoted custom bookmarks and session history.
+Completion never sends a command; press Enter when ready.
+Most Studio shortcuts are automatically prefixed with CarPackStudio.
+Platform commands use <code>&lt;mod name&gt; &lt;command&gt;</code>; <code>list</code> displays available commands.</p>
+<table cellspacing="0"><tr><th>Command</th><th>Action</th></tr>
+<tr><td><code>help</code> or <code>?</code></td><td>Console command summary.</td></tr>
+<tr><td><code>list</code></td><td>List platform/mod commands.</td></tr>
+<tr><td><code>status</code></td><td>Studio crash/recovery/weather counters.</td></tr>
+<tr><td><code>volume 0.4</code></td><td>Set the wrapper's process audio volume from 0 to 1;
+decimals are accepted. 0 is silent, 1 is full session volume. Saved for later runs, independent of
+system master and other applications' audio.</td></tr>
+<tr><td><code>echo text</code></td><td>Echo text through the Studio mod.</td></tr>
+<tr><td><code>time</code>, <code>time 19.5</code></td><td>Read/set hour of day; valid range 0 inclusive to 24 exclusive.</td></tr>
+<tr><td><code>freeze 1</code>, <code>freeze 0</code></td><td>Freeze/resume game clock.</td></tr>
+<tr><td><code>weather 70 80 80</code></td><td>Hold atmosphere/clouds, rain and environment values (each 0-100).</td></tr>
+<tr><td><code>weather off</code></td><td>Release weather override.</td></tr>
+<tr><td><code>car 333</code></td><td>Swap to an ID in the active game database; invalid IDs are rejected without reload.</td></tr>
+<tr><td><code>car status</code></td><td>Report idle, queued, swapping, complete or failed status.</td></tr>
+<tr><td><code>car details</code></td><td>Report source/target, stage, elapsed time and native load-job state.</td></tr>
+<tr><td><code>car recover</code></td><td>During a swap, restart immediately in the previous car.</td></tr>
+<tr><td><code>car force</code></td><td>During a swap, restart immediately in the requested target car.</td></tr>
+<tr><td><code>track TheIsland</code>, <code>track Anthem</code></td><td>Change between Storm Island (549) and
+Anthem (542) using native travel, without restarting Azimuth. Numeric IDs are also accepted.
+Requires settled free roam; Storm Island must be mounted in Azimuth. Native DLC entitlement and
+installation checks remain active. Concurrent car reload/teleport requests are rejected.</td></tr>
+<tr><td><code>track list</code>, <code>track status</code></td><td>List maps offline, or inspect the current track,
+target, native transition stage, elapsed time and timeout state. Progress is also printed in the console.
+Travel stays busy until the target map is settled and the game's own pause/map-availability check allows gameplay.
+After 90 seconds, a queued request expires; an already active engine load is never force-completed.
+In the experimental sandbox flow, physical radio-right input is reserved/disabled to prevent unintended map changes.</td></tr>
+<tr><td><code>tp Anthem Festival</code>, <code>tp Anthem Nicea</code></td><td>Teleport in mainland free roam,
+retaining the current car through the native loading/arrival flow. Other places: Saint-Martin, Sisteron,
+Castelletto, Montellino, San Giovanni and Airport. Place names are case-insensitive; spaces or quotes are accepted.
+Airport uses XYZ 425.574, 110.821, -1478.082.</td></tr>
+<tr><td><code>tp TheIsland Festival</code></td><td>Teleport to Storm Island's single outpost
+(aliases: Outpost, Hub, Garage). Other places: Car Meet, Docks (Port/Mainland), Barn Find (approach).
+Load TheIsland with <code>track</code> first.</td></tr>
+<tr><td><code>tp add My place</code></td><td>Save the current settled player position and map ID.
+Recall with <code>tp TheIsland "My place"</code>, or <code>tp "My place"</code> on the loaded map.
+Names are case-insensitive. Duplicate names on the same map and names of built-in destinations are rejected.</td></tr>
+<tr><td><code>tp remove My place</code></td><td>Remove a custom place, never a built-in one.
+If that name exists on several maps, load the relevant map before removing it.</td></tr>
+<tr><td><code>tp list</code></td><td>List every supported teleport entry, followed by custom entries
+marked <code>[custom]</code>. Works even when the wrapper is stopped.</td></tr>
+<tr><td><code>tp status</code></td><td>Report the active track, teleport state and actual player XYZ position.</td></tr>
+<tr><td><code>event list [map] [page]</code>, <code>event info &lt;race ID&gt;</code></td>
+<td>List standard races, 25 per page, or inspect a race's map, track, route and laps.
+For example: <code>event list TheIsland 1</code>. IDs are <code>AnthemEventRaceId</code>,
+not map or track IDs.</td></tr>
+<tr><td><code>event start &lt;race ID&gt;</code>, <code>event stop</code>, <code>event status</code></td>
+<td>Experimental native standard-race start, quit back to free roam, and lifecycle status.
+Load the race's map and wait for settled free roam before starting. Stop applies only to a Studio-started
+running race, not a loading screen. Map changes, teleport and car reload are blocked while the event is active.
+Normal game progression and save rules apply; these are not save-free simulations.</td></tr>
+<tr><td><code>trace start</code>, <code>trace stop</code>, <code>trace status</code></td><td>Record actual native
+stateflow transitions during a manually triggered map change. Tools &gt; Map transition capture provides
+Start and Stop/export actions. The JSONL capture includes elapsed time, thread IDs, state classes,
+transition offsets and active track IDs.</td></tr>
+<tr><td><code>input record 0</code>, <code>input stop</code>, <code>input play</code>, <code>input status</code></td>
+<td>Record/replay a connected XInput controller (indices 0-3). Scripts &gt; Record / play XInput scripts
+provides recording, playback and portable JSON save/load.</td></tr>
+<tr><td><code>recover 1</code>, <code>recover 0</code></td><td>Enable/disable native crash recovery; separate from car recovery.</td></tr>
+<tr><td><code>animations</code></td><td>List active-car animation graph states.</td></tr>
+<tr><td><code>animation doorLF:open</code></td><td>Play an exact state returned by animations; names depend on the vehicle.</td></tr>
+<tr><td><code>CarPackStudio animationinfo</code></td><td>Print animation graph diagnostics.</td></tr>
+<tr><td><code>CarPackStudio pad 0</code></td><td>Pulse a native game action ID, 0-31 (advanced use).</td></tr>
+<tr><td><code>CarPackLoader status</code></td><td>Report loaded pack/car counters.</td></tr>
+<tr><td><code>filter text "example"</code></td><td>Include log messages containing text.</td></tr>
+<tr><td><code>filter resource "CarPackStudio"</code></td><td>Include messages from matching resource tags.</td></tr>
+<tr><td><code>filter -text "example"</code></td><td>Exclude messages containing text.</td></tr>
+<tr><td><code>filter -resource "ShowFPS"</code></td><td>Exclude messages with matching resource tags.</td></tr>
+<tr><td><code>filter remove</code></td><td>Clear every console filter.</td></tr>
+<tr><td><code>debug Azimuth</code></td><td>Enable real D3D12 graphics/compute pipeline creation and pipeline-library
+cache-load tracing. Shows calling thread, byte count, elapsed milliseconds and HRESULT. Requires a running wrapper.</td></tr>
+<tr><td><code>debug "mod name"</code></td><td>Stream that mod's own live log messages. Repeat to add sources.
+Errors/critical messages from other sources remain eligible.</td></tr>
+<tr><td><code>debug off</code></td><td>Restore normal source logging.</td></tr>
+<tr><td><code>console 1</code>, <code>console 0</code></td><td>Detach/attach the console.</td></tr></table>
+<p>Filter matching is case-insensitive, OR between includes of the same field, AND between text/resource fields.
+Exclusions win. The Filters button manages the same rules and turns green when any are active.
+Filter changes reapply to retained output; command feedback stays visible.
+Scroll upward to pause following; <b>Latest</b> returns to new entries. Focus and new messages do not reset
+a paused scroll position. Repeated car-status polling trace lines are hidden.
+Azimuth diagnostics observe pipeline API calls, not every internal function or thread operation.
+A fully cached scene can be quiet until another pipeline is created/loaded. Other mods expose only the details
+they log. Console filters still apply.
+The detached console opens at 1000 x 700, minimum 640 x 400; closing it reattaches without losing state.</p>
+<p><b>XInput scripts:</b> record while playing, press Stop, then save JSON or Play. Buttons use standard XInput
+bit masks; triggers are 0-1 and sticks are -1 to 1. Playback replaces the selected game's controller readings,
+then supplies neutral input for 250 ms before returning control to the physical controller. Keep a controller
+connected and the game focused. Scripts retain wall-clock timing, including loading screens; there is no
+automatic wait for gameplay. Recordings are limited to 30 minutes / 100,000 state changes.
+The native transport is <code>fh2-mods\CPSInput.bin</code>; JSON is portable between sessions.</p>
+<p><b>Teleport:</b> the tool reads exit locators from the mounted game's <code>Route0.nt</code>, rather than
+relying on placeholder entity positions. Airport uses its fixed coordinates instead of a named exit locator.
+Storm Island uses verified authored exit/fast-travel coordinates.
+Unknown destinations and coordinates for a map other than the loaded map are rejected without
+starting a reload. Requests wait for settled free roam. The normal 60-second reload recovery applies when
+the current car can be resolved. Recovery restarts at the normal spawn; it does not restore an exact position.
+Use <code>track TheIsland</code> / <code>track Anthem</code> for map changes; <code>tp</code> does not change maps.
+Custom places persist independently of Settings in <code>%APPDATA%\CarPackStudio\teleport_places.json</code>.
+They retain numeric track IDs, including custom tracks already loaded by the game. This does not enable
+arbitrary-ID map switching. Save errors and invalid bookmark files are reported without silently resetting the file.
+For cross-map investigation, start a transition capture, travel through a track command or the game's own map-change UI,
+then Stop and export. Captures contain up to 100,000 transitions.</p>
+<p><b>Model viewer LOD filter:</b> use the LOD selector beside Wireframe to show a mesh-name suffix
+such as engineBay_a_LOD0, engineBay_a_LOD1 or engineBay_a_LODS. Legacy LOD prefixes are also supported.
+Parts without a LOD tag remain available. Mesh checkboxes are retained when switching
+filters; Show all / Hide all update those choices without overriding the selected LOD filter.</p>
+<h2>9. Logs and safe operation</h2>
+<p>Use Output for build/preflight checks and the wrapper console for live logs. The runtime keeps platform.log,
+Extra Options/Azimuth logs and CarPackStudio-critical.log; crash records are under fh2-mods\crashes.
+The project receives diagnostics.log after wrapper preflight. If a car fails to appear, check its ID,
+archive paths and the CHECK messages before rebuilding. Stop the wrapper before installing/uninstalling.
+Uninstall changes the selected runtime only; another installation has its own CarPacks folder.</p>
+<h2>Technical details</h2>
+<ul><li>Release: <b>0.2.2-beta</b>, Windows x64, PySide6/Qt desktop GUI packaged with PyInstaller.
+OpenGL compatibility rendering is used by the model viewer. Python is bundled.</li>
+<li>The workspace always uses the dark theme, including floating panels.
+Drag an individual panel tab outside its strip to dock at the left, right, top or bottom edge;
+an outline previews the drop. Drop outside Studio to float that panel.
+CarPackStudio.dll file, product and mod versions are <b>0.2.2</b>.</li>
+<li>Only CarPackLoader, CarPackStudio test mod and Virtual Dashboard are bundled runtime mods.
+Azimuth, FH2 Mod Platform, Extra Options, ShowFPS, mouse/keyboard and NoPause are not redistributed.
+Install them separately. Without NoPause the game may pause when losing focus.</li>
+<li>Sandbox location: %LOCALAPPDATA%\CarPackStudio\runtime.
+Settings: %APPDATA%\CarPackStudio\settings.json.
+Telemetry: Virtual Dashboard HTTP API, port 8080 by default.
+Default game launch arguments: <code>--game=fh2 --skip-launcher</code>.
+Edit <b>Azimuth launch arguments</b> in File &gt; Settings, alongside the Game Mount folder.
+Enter arguments only, without azimuth.exe; double-quote paths containing spaces.
+An empty field launches with no arguments. <b>Reset to default</b> restores the defaults.
+Changes apply on the next wrapper launch and do not restart a running game.</li>
+<li>Pack data: fh2-mods\CarPacks\&lt;pack&gt;\pack.sql, strings.txt and pack.json.
+Assets/manifest: Mount\mediapc. Generated database overrides can be in mediapc or mediaoverride.
+The base Mount\media\stripped\gamedbRC.slt is read-only to the pack builder/uninstaller.</li>
+<li>Per-car uninstall splits generated SQL by car, preserves other sections and shared strings,
+backs up installed pack.sql/pack.json as .bak, and deletes that custom ID's generated car/upgrade rows.
+Retained asset ZIPs and project files allow later rebuilding; they are not recursively deleted.</li>
+<li>Binary assets use little-endian readers. burG bundle metadata, DXBC containers and verified FH2
+car/light fields are shown without writing back binary changes. Texture detiling uses xg.dll;
+audio conversion uses the bundled FFmpeg executable.</li>
+<li>Save generation uses the bundled template and the supplied base database, creates a sandbox save revision,
+and inserts selected custom test cars. Base game archives are required and are not part of this release.</li>
+<li>Application icon: original garage-and-spanner vector artwork created for this tool, with editable
+resources/app-icon.svg and generated PNG/multi-resolution ICO. No exported game pixels are used.
+See Help &gt; Credits and the included third-party notices. FFmpeg is GPLv3-or-later;
+its notice records exact-build source obligations for redistribution.</li></ul>
+</body></html>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="disc" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#303844"/>
+      <stop offset="1" stop-color="#141920"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#91d9f3"/>
+      <stop offset="1" stop-color="#477ee0"/>
+    </linearGradient>
+  </defs>
+  <circle cx="256" cy="256" r="240" fill="#101419"/>
+  <circle cx="256" cy="256" r="226" fill="url(#disc)" stroke="url(#rim)" stroke-width="12"/>
+  <path d="M119 291V218L256 117 393 218V291" fill="none" stroke="#edf4fa" stroke-width="24" stroke-linejoin="round"/>
+  <path d="M152 322V234L256 159 360 234V322" fill="none" stroke="#edf4fa" stroke-opacity=".16" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M219 327 284 262C275 243 280 220 296 207 308 198 321 195 335 199L312 222 318 244 340 250 363 227C368 246 361 266 345 277 333 285 319 287 306 283L241 349C230 360 213 360 203 349 193 339 194 323 204 313Z"
+        fill="url(#rim)" stroke="#101419" stroke-width="5" stroke-linejoin="round"/>
+  <circle cx="222" cy="337" r="7" fill="#18202c"/>
+  <path d="M162 386H350" fill="none" stroke="#edf4fa" stroke-width="10" stroke-linecap="round"/>
+  <path d="M204 413H308" fill="none" stroke="url(#rim)" stroke-width="6" stroke-linecap="round"/>
+</svg>

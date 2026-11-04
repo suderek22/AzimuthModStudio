@@ -10,6 +10,7 @@ DEFAULTS = {
     "mount": "",
     "runtime_mode": "sandbox",          # sandbox | existing
     "azimuth_dir": "",                  # used when runtime_mode == existing
+    "dependency_source": "",            # user's installed Azimuth + dependencies, never bundled
     "launch_arguments": "--game=fh2 --skip-launcher",
     "sandbox_dir": os.path.join(os.environ.get("LOCALAPPDATA", APPDATA), "CarPackStudio", "runtime"),
     "language": "EN",
@@ -17,11 +18,14 @@ DEFAULTS = {
     "telemetry_port": 8080,
     "crash_recover": True,
     "boot_assist": True,
-    "ultimate_save": True,              # sandbox only: generated save with every car and max credits
+    "ultimate_save": True,              # legacy setting; sandbox always regenerates its template save
     "spawn_festival": True,             # sandbox only: Extra Options SpawnAtFestival instead of the car meet
-    "experimental_live_reload": True,   # sandbox console: car <id>, once in free roam
+    "experimental_live_reload": True,   # legacy setting; sandbox command hooks remain enabled
+    "travel_test_binds": True,          # reserve physical radio buttons, separate from console travel
     "save_credits": 999999999,
     "debug_map": "",
+    "check_updates": False,             # opt-in: contact GitHub once at startup
+    "wrapper_volume": 1.0,              # process-scoped Core Audio session volume, 0..1
 }
 
 

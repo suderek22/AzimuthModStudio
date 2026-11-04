@@ -6,22 +6,27 @@ import shutil
 import sqlite3
 import time
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QThread, Signal, QRectF
-from PySide6.QtGui import QColor, QPainter, QPen, QFont
+from PySide6.QtCore import Qt, QTimer, QThread, Signal, QRectF, QSize
+from PySide6.QtGui import QColor, QPainter, QPen, QFont, QIcon
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
                                QSplitter, QCheckBox, QStackedLayout, QApplication, QFileDialog)
 
-from . import theme
+from . import theme, config
+from .runtime_state import parse_track_state
+from .volume import validate_volume, process_volumes
 from .console import Console, ConsoleWindow
 from .overlay import TelemetryOverlay
-from .runtime import Runtime, user32, WS_CHILD, WS_VISIBLE, GWL_STYLE, send_key
-from .travel import DESTINATIONS, TRACKS, resolve_destination, resolve_track
+from .runtime import Runtime, user32, WS_CHILD, WS_VISIBLE, GWL_STYLE, send_key, focus_game_window
+from .travel import (TRACKS, TeleportPlace, resolve_destination, resolve_track,
+                     resolve_place_track, load_places, place_key, validate_place_name,
+                     parse_player_position, teleport_entries, track_label, add_place, remove_place)
 
 VK_RETURN = 0x0D
 STUDIO_COMMANDS = {"time", "freeze", "weather", "status", "recover", "echo", "car", "animation", "animations",
-                   "input", "trace", "pipelines"}
+                   "input", "trace", "pipelines", "spawn", "drivatar"}
 SWP_NOZORDER = 0x4
 
 
@@ -34,6 +39,7 @@ class GameContainer(QWidget):
         self.setAttribute(Qt.WA_OpaquePaintEvent, True)
         self.setStyleSheet("background:#000;")
         self.setMinimumSize(320, 180)
+        self.setFocusPolicy(Qt.StrongFocus)
         self.child = None
 
     def embed(self, rt, hwnd):
@@ -43,6 +49,22 @@ class GameContainer(QWidget):
         user32.SetWindowLongPtrW(hwnd, GWL_STYLE, (st | WS_CHILD | WS_VISIBLE) & ~0x80000000)
         self.child = hwnd
         self.fit()
+        user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x1 | 0x2 | SWP_NOZORDER | 0x20 | 0x40)
+        self.setFocus(Qt.OtherFocusReason)
+        QTimer.singleShot(0, self.focus_game)
+
+    def focus_game(self):
+        if self.child:
+            return focus_game_window(self.child, int(self.window().winId()))
+        return False
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self.focus_game()
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        self.focus_game()
 
     def release(self, rt):
         if self.child and user32.IsWindow(self.child):
@@ -64,15 +86,18 @@ class GameContainer(QWidget):
 class Poller(QThread):
     data = Signal(object)
     swap_data = Signal(object)
+    native_data = Signal(object)
 
     def __init__(self, rt):
         super().__init__()
         self.rt = rt
         self.alive = True
         self.swap_target = None
+        self.refresh_native = False
 
     def run(self):
         next_swap_poll = 0
+        next_native_poll = 0
         while self.alive:
             self.data.emit(self.rt.telemetry() if self.rt.running() else None)
             target = self.swap_target
@@ -80,11 +105,21 @@ class Poller(QThread):
                 reply = self.rt.command("CarPackStudio car status")
                 self.swap_data.emit((target, reply))
                 next_swap_poll = time.monotonic() + 1
+            if self.rt.running() and (self.refresh_native or time.monotonic() >= next_native_poll):
+                self.refresh_native = False
+                proc = self.rt.proc
+                if proc is not None:
+                    self.native_data.emit({"pid": proc.pid, "track": self.rt.command("CarPackStudio track status"),
+                                           "spawn": self.rt.command("CarPackStudio spawn list")})
+                next_native_poll = time.monotonic() + 1
             time.sleep(0.1)
 
 
 class WrapperTab(QWidget):
     status = Signal(str)
+    running_changed = Signal(bool)
+    native_snapshot = Signal(object)
+    places_changed = Signal()
 
     def __init__(self, settings, prepare_cb):
         super().__init__()
@@ -112,6 +147,15 @@ class WrapperTab(QWidget):
         self.console_window = None
         self.console_sizes = [620, 160]
         self.scripts_window = None
+        self.places_window = None
+        self.pending_navigation = None
+        self._reported_running = False
+        self._volume_pending = None
+        self._volume_next_try = 0
+        self._volume_requested_at = 0
+        self._input_expected = set()
+        self._input_ready = set()
+        self._input_wait_started = None
 
         self.run_btn = QPushButton("▶ Run")
         self.run_btn.setObjectName("primary")
@@ -122,12 +166,15 @@ class WrapperTab(QWidget):
         self.recover_btn.setToolTip("After a stalled swap, restart in the previous car at the normal spawn point.")
         self.recover_btn.clicked.connect(self.recover_swap)
         self.recover_btn.hide()
-        self.detach_btn = QPushButton("⧉ Detach")
+        self.detach_btn = QPushButton()
+        self.detach_btn.setFixedSize(28, 28)
+        self.detach_btn.setIconSize(QSize(18, 18))
+        self._set_game_detached(False)
         self.detach_btn.clicked.connect(self.toggle_detach)
         self.boot = QCheckBox("Skip title screen")
         self.boot.setChecked(settings.get("boot_assist", True))
         self.show_overlay = QCheckBox("Telemetry overlay")
-        self.show_overlay.setChecked(True)
+        self.show_overlay.setChecked(False)
         self.show_fps = QCheckBox("ShowFPS")
         self.show_fps.setToolTip("ShowFPS mod performance overlay (applies on the next run; F11 toggles it in game)")
         self.show_fps.setChecked(settings.get("show_fps", True))
@@ -139,9 +186,19 @@ class WrapperTab(QWidget):
         bar.setSpacing(10)
         for checkbox in (self.boot, self.show_overlay, self.show_fps):
             checkbox.setStyleSheet("QCheckBox { spacing:6px; }")
-        for w in (self.run_btn, self.stop_btn, self.recover_btn, self.detach_btn, self.boot, self.show_overlay, self.show_fps):
+        for w in (self.run_btn, self.stop_btn, self.recover_btn, self.detach_btn, self.boot, self.show_overlay,
+                  self.show_fps):
             bar.addWidget(w)
         bar.addStretch()
+        self.screenshot_btn = QPushButton()
+        self.screenshot_btn.setIcon(QIcon(os.path.join(config.ROOT, "resources", "screenshot.svg")))
+        self.screenshot_btn.setIconSize(QSize(20, 20))
+        self.screenshot_btn.setFixedSize(32, 28)
+        self.screenshot_btn.setToolTip("Save the game client at its native pixel resolution to %APPDATA%\\CarPackStudio\\screenshots")
+        self.screenshot_btn.setAccessibleName("Screenshot")
+        self.screenshot_btn.setEnabled(False)
+        self.screenshot_btn.clicked.connect(self.take_screenshot)
+        bar.addWidget(self.screenshot_btn)
         details = QHBoxLayout()
         details.setContentsMargins(6, 2, 6, 6)
         details.setSpacing(16)
@@ -163,6 +220,7 @@ class WrapperTab(QWidget):
         self.overlay = TelemetryOverlay(self.container)
         self.console = Console()
         self.console.submit.connect(self.on_command)
+        self.console.detach_requested.connect(lambda: self.send("console 1" if self.console_window is None else "console 0"))
         split = QSplitter(Qt.Vertical)
         split.addWidget(self.stack)
         split.addWidget(self.console)
@@ -179,11 +237,13 @@ class WrapperTab(QWidget):
         self.poller = Poller(self.rt)
         self.poller.data.connect(self.on_telemetry)
         self.poller.swap_data.connect(self.on_swap_status)
+        self.poller.native_data.connect(self.on_native_data)
         self.poller.start()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(400)
         self._show_placeholder(True)
+        self.refresh_optional_mods()
 
     # ------------------------------------------------------------- state
     def _show_placeholder(self, on):
@@ -225,9 +285,11 @@ class WrapperTab(QWidget):
         self.embedded = False
         self.detached = False
         self.driving = False
+        self._set_game_detached(False)
         self.active_car = None
         self.state.setText("Starting…")
         self.console.write("azimuth.exe started (pid %d)" % self.rt.proc.pid, theme.GREEN)
+        self._report_running()
 
     def stop(self):
         if self.scripts_window and (self.scripts_window.capturing or self.scripts_window.playing) and self.rt.running():
@@ -239,6 +301,7 @@ class WrapperTab(QWidget):
         self.embedded = False
         self._show_placeholder(True)
         self.state.setText("Stopped")
+        self._report_running()
         if self.after_cb:
             self.after_cb(self.console.write)
 
@@ -251,21 +314,32 @@ class WrapperTab(QWidget):
             self.detached = False
             self.embedded = True
             self._show_placeholder(False)
-            self.detach_btn.setText("⧉ Detach")
+            self._set_game_detached(False)
         else:
             self.container.release(self.rt)
             self.detached = True
             self.embedded = False
             self._show_placeholder(True)
-            self.placeholder.setText("Game is running in a detached window.\nPress ⧉ Attach to bring it back.")
-            self.detach_btn.setText("⧉ Attach")
+            self.placeholder.setText("Game is running in a detached window.\nPress the Attach icon to bring it back.")
+            self._set_game_detached(True)
+
+    def _set_game_detached(self, detached):
+        label = "Attach" if detached else "Detach"
+        self.detach_btn.setIcon(QIcon(os.path.join(config.ROOT, "resources",
+                                                 "attach.svg" if detached else "detach.svg")))
+        self.detach_btn.setAccessibleName(label + " game window")
+        self.detach_btn.setToolTip(label + " game window")
 
     # ------------------------------------------------------------- periodic
     def tick(self):
         running = self.rt.running()
+        self._report_running()
+        self.refresh_optional_mods()
+        if running:
+            self._pump_logs()
         if running and not self.embedded and not self.detached:
             hwnd = self.rt.game_window()
-            if hwnd:
+            if hwnd and self._input_window_ready():
                 self.container.embed(self.rt, hwnd)
                 self.embedded = True
                 self._show_placeholder(False)
@@ -284,9 +358,153 @@ class WrapperTab(QWidget):
                 self.rt.proc = None
                 self._clear_swap()
         if running:
-            self._pump_logs()
             self._check_swap_timeout()
+            self._apply_volume()
         self.overlay.follow(self.embedded and self.show_overlay.isChecked())
+        if self.pending_navigation and time.monotonic() - self.pending_navigation[2] > 95:
+            self._cancel_navigation("Map travel timed out; the follow-up action was not sent. Use track status to inspect the game.")
+
+    def _report_running(self):
+        running = self.rt.running()
+        self.screenshot_btn.setEnabled(running)
+        if self._reported_running != running:
+            self._reported_running = running
+            if not running and self.pending_navigation:
+                self._cancel_navigation("Wrapper stopped; pending map action cancelled.")
+            self.running_changed.emit(running)
+            self._volume_pending = self.rt.proc.pid if running else None
+            self._volume_requested_at = time.monotonic()
+            self._volume_next_try = 0
+            self._input_expected = {name for dll, name in (("FH2Mouse.dll", "FH2 Mouse & Keyboard"),
+                                                          ("FH2NoPause.dll", "NoPause"))
+                                    if running and (Path(self.rt.mods_dir) / dll).is_file()}
+            self._input_ready.clear()
+            self._input_wait_started = None
+
+    def refresh_optional_mods(self):
+        installed = (Path(self.rt.mods_dir) / "ShowFPS.dll").is_file()
+        self.show_fps.setEnabled(installed)
+        self.show_fps.setToolTip("ShowFPS setting applies on the next run; F11 toggles it in game."
+                                if installed else "Optional ShowFPS mod is not installed. Use Mods > Import dependencies.")
+
+    def _input_window_ready(self):
+        missing = self._input_expected - self._input_ready
+        if not missing:
+            return True
+        if self._input_wait_started is None:
+            self._input_wait_started = time.monotonic()
+        if time.monotonic() - self._input_wait_started >= 20:
+            self.console.notice("Input initialization was not confirmed for %s; embedding anyway. "
+                                "If controls do not respond, detach/attach and inspect platform.log." %
+                                ", ".join(sorted(missing)), theme.ORANGE)
+            self._input_expected.clear()
+            return True
+        self.state.setText("Preparing input...")
+        self.placeholder.setText("Waiting for %s to discover the game window before embedding..." %
+                                 ", ".join(sorted(missing)))
+        return False
+
+    def set_volume(self, value):
+        value = validate_volume(value)
+        self.s["wrapper_volume"] = value
+        if not self.rt.running():
+            self.console.notice("Wrapper volume saved: %.3g (applies on the next run)." % value)
+            return
+        self._volume_pending = self.rt.proc.pid
+        self._volume_requested_at = time.monotonic()
+        self._volume_next_try = 0
+        self._apply_volume()
+
+    def _apply_volume(self):
+        if self._volume_pending is None or time.monotonic() < self._volume_next_try:
+            return
+        if not self.rt.running() or self.rt.proc.pid != self._volume_pending:
+            self._volume_pending = None
+            return
+        try:
+            value = validate_volume(self.s.get("wrapper_volume", 1.0))
+            if process_volumes(self._volume_pending, value):
+                self._volume_pending = None
+                self.console.notice("Wrapper volume: %.3g" % value)
+            elif time.monotonic() - self._volume_requested_at > 90:
+                raise OSError("No audio session appeared for this wrapper process within 90 seconds.")
+            else:
+                if self._volume_next_try == 0:
+                    self.console.notice("Wrapper volume %.3g pending; waiting for the game's audio session." % value)
+                self._volume_next_try = time.monotonic() + 1
+        except (OSError, ValueError) as ex:
+            self._volume_pending = None
+            self.console.notice("error: cannot set wrapper volume: %s" % ex, theme.RED)
+
+    def _cancel_navigation(self, message):
+        self.pending_navigation = None
+        self.console.notice(message, theme.RED)
+        self.status.emit(message)
+
+    def navigate(self, track_id, followup=None):
+        """Queue a GUI action only after the native map flow confirms settled arrival."""
+        try:
+            if not self.rt.running():
+                raise ValueError("Start the wrapper and enter free roam first.")
+            if self.pending_navigation:
+                raise ValueError("Wait for the pending map action to finish.")
+            if track_id not in TRACKS.values():
+                raise ValueError("Native map travel currently supports Anthem (542) and TheIsland (549).")
+            state = parse_track_state(self.rt.command("CarPackStudio track status"))
+            if not state.idle:
+                raise ValueError("Wait for settled free roam before changing maps or teleporting.")
+            if state.current == track_id:
+                if followup:
+                    self.send(followup)
+                else:
+                    self.console.notice("Map already loaded: %s (%d)" % (track_label(track_id), track_id))
+                return
+            reply = self.rt.command("CarPackStudio track %d" % track_id)
+            self.console.notice(reply, theme.RED if reply.startswith("error:") else None)
+            if not reply.startswith("track queued:"):
+                return
+            self.pending_navigation = (track_id, followup, time.monotonic())
+            self.state.setText("Travelling to %s..." % track_label(track_id))
+            self.poller.refresh_native = True
+            self.console.notice("Waiting for %s before %s." %
+                                (track_label(track_id), followup or "finishing map travel"))
+        except ValueError as ex:
+            self.console.notice("error: %s" % ex, theme.RED)
+
+    def on_native_data(self, snapshot):
+        if not self.rt.running() or snapshot["pid"] != self.rt.proc.pid:
+            return
+        self.native_snapshot.emit(snapshot)
+        if not self.pending_navigation:
+            return
+        track_id, followup, _ = self.pending_navigation
+        try:
+            if snapshot["track"].startswith("error:"):
+                return  # A transient pipe outage must not execute or discard queued travel.
+            state = parse_track_state(snapshot["track"])
+            if state.timed_out or any(word in state.stage.casefold() for word in ("failed", "error", "expired")):
+                raise ValueError("Map travel failed: " + snapshot["track"])
+            if state.queued not in (-1, track_id) or state.target not in (-1, track_id):
+                raise ValueError("Another map travel replaced the pending GUI action.")
+            if state.current == track_id and state.idle:
+                self.pending_navigation = None
+                self.console.notice("Arrived at %s." % track_label(track_id))
+                if followup:
+                    self.send(followup)
+        except ValueError as ex:
+            self._cancel_navigation(str(ex) + " Follow-up action cancelled.")
+
+    def take_screenshot(self):
+        from .screenshots import capture_game
+        try:
+            path, width, height = capture_game(self.rt)
+            message = "Screenshot saved (%d x %d): %s" % (width, height, path)
+            self.console.notice(message, theme.GREEN)
+            self.status.emit(message)
+        except (OSError, ValueError) as ex:
+            message = "Cannot capture screenshot: %s" % ex
+            self.console.notice(message, theme.RED)
+            self.status.emit(message)
 
     def on_telemetry(self, t):
         self.overlay.update_data(t)
@@ -299,13 +517,15 @@ class WrapperTab(QWidget):
                 if self.driving:
                     self.console.write("car changed: %s" % media, theme.GREEN)
                 self.active_car = media
-            if self.swap_target is None:
+            if self.swap_target is None and self.pending_navigation is None:
                 self.state.setText("Driving: %s" % media)
         if t and t.get("valid") and not self.driving:
             self.driving = True
-            if self.swap_target is None:
+            if self.swap_target is None and self.pending_navigation is None:
                 self.state.setText("Driving: %s" % t.get("car", ""))
             self.console.write("in game – telemetry live", theme.GREEN)
+            if self.embedded and self.container.hasFocus():
+                self.container.focus_game()
 
     def _pump_logs(self):
         for key, path in self.rt.log_files().items():
@@ -328,7 +548,12 @@ class WrapperTab(QWidget):
                     self._log_line(key, line.rstrip("\r"))
 
     def _log_line(self, key, line):
-        if re.search(r"\[CarPackStudio\]\s+command:\s+(?:car|input) status\s*$", line, re.I):
+        if key == "platform":
+            if "[FH2 Mouse & Keyboard]" in line and "watching the game window" in line:
+                self._input_ready.add("FH2 Mouse & Keyboard")
+            elif "[NoPause]" in line and "watching game window" in line:
+                self._input_ready.add("NoPause")
+        if re.search(r"\[CarPackStudio\]\s+command:\s+(?:(?:car|input|track) status|spawn list)\s*$", line, re.I):
             return
         match = re.search(r"\[([^\]]+)\]", line)
         resource = match.group(1) if key == "platform" and match else {
@@ -358,6 +583,7 @@ class WrapperTab(QWidget):
                 layout.setContentsMargins(0, 0, 0, 0)
                 layout.addWidget(self.console)
                 self.console_window.resize(1000, 700)
+                self.console.set_detached(True)
             self.console_window.show()
             self.console_window.raise_()
         elif self.console_window is not None:
@@ -367,14 +593,64 @@ class WrapperTab(QWidget):
             self.console_split.setSizes(self.console_sizes)
             window.hide()
             window.deleteLater()
+            self.console.set_detached(False)
 
     def _console_command(self, line):
         first = line.split(None, 1)[0].lower() if line else ""
-        if first not in ("filter", "debug", "console", "tp", "track"):
+        if first not in ("filter", "debug", "console", "tp", "track", "event", "volume"):
             return False
         try:
             parts = shlex.split(line)
-            if first == "track":
+            if self.pending_navigation and (
+                    (first == "tp" and (len(parts) < 2 or parts[1].casefold() not in ("list", "status"))) or
+                    (first == "track" and (len(parts) < 2 or parts[1].casefold() not in ("list", "status"))) or
+                    (first == "event" and len(parts) > 1 and parts[1].casefold() == "start")):
+                raise ValueError("Wait for the pending GUI map action to finish.")
+            if first == "volume":
+                if len(parts) != 2:
+                    raise ValueError("usage: volume <0..1> (for example volume 0.4)")
+                self.set_volume(parts[1])
+            elif first == "event":
+                from .gamedata import GameData
+                usage = "usage: event list [map] [page] | info <race ID> | start <race ID> | stop | status"
+                operation = parts[1].casefold() if len(parts) > 1 else ""
+                if operation == "list":
+                    if len(parts) > 4:
+                        raise ValueError(usage)
+                    map_name = resolve_track(parts[2])[0] if len(parts) >= 3 else None
+                    page = int(parts[3]) if len(parts) == 4 else 1
+                    races = GameData(self.s.get("mount", "")).event_races(self.s.get("language", "EN"))
+                    if map_name:
+                        races = [race for race in races if race.map_name == map_name]
+                    pages = max(1, (len(races) + 24) // 25)
+                    if not 1 <= page <= pages:
+                        raise ValueError("Event list page must be between 1 and %d." % pages)
+                    lines = ["%d | %s | %s | track=%d route=%d laps=%d" %
+                             (race.id, race.map_name, race.name, race.track_id, race.route, race.laps)
+                             for race in races[(page - 1) * 25:page * 25]]
+                    self.console.notice("Standard races (AnthemEventRaceId), page %d/%d (%d total):\n%s" %
+                                        (page, pages, len(races), "\n".join(lines)))
+                elif operation in ("info", "start") and len(parts) == 3:
+                    if not parts[2].isascii() or not parts[2].isdigit() or not 0 < int(parts[2]) <= 2147483647:
+                        raise ValueError("Race ID must be a positive integer from event list, not a track ID.")
+                    race_id = int(parts[2])
+                    races = GameData(self.s.get("mount", "")).event_races(self.s.get("language", "EN"))
+                    race = next((race for race in races if race.id == race_id), None)
+                    if race is None:
+                        raise ValueError("Unsupported standard race ID %d; use event list." % race_id)
+                    self.console.notice("%d | %s | %s | track=%d route=%d laps=%d" %
+                                        (race.id, race.map_name, race.name, race.track_id, race.route, race.laps))
+                    if operation == "start":
+                        if not self.rt.running():
+                            raise ValueError("Start the wrapper and load %s free roam first." % race.map_name)
+                        reply = self.rt.command("CarPackStudio event start %d" % race_id)
+                        self.console.notice(reply, theme.RED if reply.startswith("error:") else None)
+                elif operation in ("status", "stop") and len(parts) == 2:
+                    reply = self.rt.command("CarPackStudio event " + operation)
+                    self.console.notice(reply, theme.RED if reply.startswith("error:") else None)
+                else:
+                    raise ValueError(usage)
+            elif first == "track":
                 value = " ".join(parts[1:])
                 if value.casefold() == "list":
                     self.console.notice("Available tracks:\n" + "\n".join(
@@ -395,31 +671,45 @@ class WrapperTab(QWidget):
                 self.console.notice(reply, theme.RED if reply.startswith("error:") else None)
             elif first == "tp":
                 if len(parts) == 2 and parts[1].casefold() == "list":
-                    self.console.notice("Available teleport entries:\n" +
-                                        "\n".join("tp Anthem " + name for name in DESTINATIONS))
+                    self.console.notice("Available teleport entries:\n" + "\n".join(teleport_entries()))
                     return True
                 if len(parts) == 2 and parts[1].casefold() == "status":
                     reply = self.rt.command("CarPackStudio teleport status")
                     self.console.notice(reply, theme.RED if reply.startswith("error:") else None)
                     return True
-                if len(parts) < 3:
-                    raise ValueError("usage: tp Anthem <place> | tp list | tp status; e.g. tp Anthem Airport")
-                name, coordinates = resolve_destination(self.s.get("mount", ""), parts[1], " ".join(parts[2:]))
+                if len(parts) >= 2 and parts[1].casefold() in ("add", "remove"):
+                    self._edit_teleport_place(parts[1].casefold(), " ".join(parts[2:]))
+                    return True
+                if len(parts) < 2:
+                    raise ValueError("usage: tp [map] <place> | tp add <name> | tp remove <name> | tp list | tp status")
                 if not self.rt.running():
                     raise ValueError("Start the wrapper and enter free roam before teleporting.")
+                if len(parts) >= 3:
+                    map_name, track_id = resolve_place_track(parts[1])
+                    requested = " ".join(parts[2:])
+                else:
+                    track_id, _ = parse_player_position(self.rt.command("CarPackStudio teleport capture"))
+                    map_name, requested = track_label(track_id), parts[1]
+                custom = next((p for p in load_places()
+                               if p.track_id == track_id and place_key(p.name) == place_key(requested)), None)
+                if custom:
+                    name, coordinates = custom.name, custom.position
+                else:
+                    name, coordinates = resolve_destination(self.s.get("mount", ""), map_name, requested)
                 current_id = None
                 if self.active_car:
                     try:
                         current_id = self.rt.car_id(self.active_car)
                     except (OSError, sqlite3.Error) as ex:
                         self.console.notice("Cannot resolve car for teleport recovery: %s" % ex, theme.ORANGE)
-                reply = self.rt.command("CarPackStudio teleport " + " ".join(format(value, ".9g") for value in coordinates))
+                reply = self.rt.command("CarPackStudio teleport at %d " % track_id +
+                                        " ".join(format(value, ".9g") for value in coordinates))
                 if not reply.startswith("tp queued:"):
                     raise ValueError(reply)
-                self.console.notice("Anthem / %s: %s" % (name, reply))
+                self.console.notice("%s / %s: %s" % (map_name, name, reply))
                 if current_id is not None:
                     self._track_reload(current_id, current_id)
-                    self.state.setText("Teleporting to Anthem / %s..." % name)
+                    self.state.setText("Teleporting to %s / %s..." % (map_name, name))
             elif first == "console":
                 if len(parts) != 2 or parts[1] not in ("0", "1"):
                     raise ValueError("usage: console 1 (detach) | console 0 (attach)")
@@ -467,9 +757,53 @@ class WrapperTab(QWidget):
                                             "Native D3D12 pipeline creation/cache calls include thread IDs, durations and HRESULTs."
                                             if target.casefold() == "azimuth" else
                                             "Mod details depend on the mod's own logging."))
-        except (ValueError, OSError, ET.ParseError, KeyError) as ex:
+        except (ValueError, OSError, ET.ParseError, KeyError, sqlite3.Error, zipfile.BadZipFile) as ex:
             self.console.notice("error: %s" % ex, theme.RED)
         return True
+
+    def _edit_teleport_place(self, operation, value):
+        name = validate_place_name(value)
+        if operation == "add":
+            self.add_current_place(name)
+        else:
+            matches = [p for p in load_places() if place_key(p.name) == place_key(name)]
+            if not matches:
+                raise ValueError('Custom place "%s" does not exist; built-in places cannot be removed.' % name)
+            if len(matches) > 1:
+                track_id, _ = parse_player_position(self.rt.command("CarPackStudio teleport capture"))
+                matches = [p for p in matches if p.track_id == track_id]
+                if len(matches) != 1:
+                    raise ValueError("That name exists on several maps; load its map before removing it.")
+            self.delete_place(matches[0].track_id, matches[0].name)
+
+    def teleport_to(self, track_id, name):
+        self.navigate(track_id, 'tp %d "%s"' % (track_id, name))
+
+    def add_current_place(self, name):
+        name = validate_place_name(name)
+        if not self.rt.running():
+            raise ValueError("Start the wrapper and enter settled free roam before adding a place.")
+        if self.pending_navigation:
+            raise ValueError("Wait for the pending map action before saving a place.")
+        track_id, position = parse_player_position(self.rt.command("CarPackStudio teleport capture"))
+        place = add_place(TeleportPlace(name, track_id, position))
+        self.console.notice('Saved custom place "%s" on %s.' % (place.name, track_label(place.track_id)))
+        self.places_changed.emit()
+        return place
+
+    def delete_place(self, track_id, name):
+        place = remove_place(track_id, name)
+        self.console.notice('Removed custom place "%s" on %s.' % (place.name, track_label(place.track_id)))
+        self.places_changed.emit()
+
+    def show_places(self):
+        if self.places_window is None:
+            from .travel_ui import PlacesDialog
+            self.places_window = PlacesDialog(self)
+        self.places_window.refresh()
+        self.places_window.show()
+        self.places_window.raise_()
+        self.places_window.activateWindow()
 
     def show_scripts(self):
         if self.scripts_window is None:
@@ -516,10 +850,20 @@ class WrapperTab(QWidget):
                                "time <h>, freeze <0|1>, weather <atm> <rain> <env>|off, status, recover <0|1>, "
                                "car recover (restart in previous car), car force (restart in swap target), "
                                "car <id>, car status, car details, echo <text>. Up/Down recalls session commands. "
+                               "Tab completes the line end; repeated Tab cycles matches, Shift+Tab cycles backwards. "
                                'filter [-]text "match", filter [-]resource "name", filter remove; '
                                'debug Azimuth|"<mod name>"|off; console 1 (detach), console 0 (attach). '
+                               "volume <0..1> (wrapper process only, decimals supported); "
                                "track Anthem|TheIsland|542|549, track list, track status; "
-                               "tp Anthem <place>, tp list, tp status; trace start|stop|status; input record <0-3>|play|stop|status. "
+                               "tp [map] <place>, tp add|remove <name>, tp list, tp status; "
+                               "event list [map] [page], event info|start <race ID>, event stop|status (experimental); "
+                               "spawn car|ai|drivatar <carID>, spawn list [page], spawn status, "
+                               "spawn remove car <object ID>, spawn clear "
+                               "(experimental: four cars total, load one car at a time; AI starts paused; clear before travel/events/car reload); "
+                               "drivatar pause|play|reset [object ID] (Studio AI only; follow/chase unavailable); "
+                               "spawn swap <object ID>|reset|status (driverless cars only; controls and camera); "
+                               "drivatar <object ID> swap, drivatar swap reset (same temporary possession); "
+                               "trace start|stop|status; input record <0-3>|play|stop|status. "
                                "'list' shows everything.", theme.FG_DIM)
             return
         self.send(line, echo=False)
@@ -529,6 +873,8 @@ class WrapperTab(QWidget):
         if self._console_command(line):
             return
         first = line.split(None, 1)[0].lower() if line else ""
+        if first == "drivatar":
+            line = first + line[len(first):]
         if first in STUDIO_COMMANDS:
             line = "CarPackStudio " + line
         if echo:
@@ -548,6 +894,8 @@ class WrapperTab(QWidget):
                 self.console.write("Cannot resolve previous car for recovery: %s" % ex, theme.RED)
         reply = self.rt.command(line)
         self.console.notice(reply, theme.RED if reply.startswith("error:") else None)
+        if len(command) >= 2 and command[0] == "carpackstudio" and command[1] in ("spawn", "drivatar"):
+            self.poller.refresh_native = True
         if is_swap and reply.startswith("swapping to car ") and reply[16:].isdigit():
             self._track_reload(int(reply[16:]), previous_id)
 
@@ -629,10 +977,12 @@ class WrapperTab(QWidget):
             self.scripts_window.stop()
         self.set_console_detached(False)
         self.poller.alive = False
-        self.poller.wait(1000)
         if self.rt.running() and self.embedded:
             self.container.release(self.rt)
         self.rt.stop()
+        self.poller.wait()
         if self.scripts_window:
             self.scripts_window.timer.stop()
             self.scripts_window.close()
+        if self.places_window:
+            self.places_window.close()

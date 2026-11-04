@@ -1,13 +1,19 @@
-Car Pack Studio 0.1.0 Experimental - third-party notices
+Car Pack Studio 0.2.2-beta - third-party notices
 =====================================================
 
 Azimuth 1.0.2
-Bundled runtime executable/libraries. See runtime\data\licenses.txt.
+Required external dependency, not bundled. Retain the installed distribution's licenses.
 
 FH2 Mod Platform 2.8.0; Trinculo54 and contributors (MIT).
 FH2 Extra Options 0.3.2; Arthur / RokkuDayo.
 FH2 Mouse & Keyboard, NoPause, ShowFPS; qiangqiang101.
-See runtime\fh2-mods\notices and Help > Credits.
+Platform and Extra Options are required external dependencies.
+Mouse & Keyboard, NoPause and ShowFPS are optional external dependencies.
+None of these third-party runtime mods is bundled. See Help > Credits.
+User-initiated imports copy from the user's installed distribution, not a download service.
+
+Bundled runtime mods: CarPackLoader, CarPackStudio and Virtual Dashboard.
+Virtual Dashboard is supplied by its owner.
 
 FM5 import tooling / ForzaTech Studio
 Asset-format references and xg.dll texture detiling support.
@@ -34,3 +40,8 @@ or rights for every bundled component have been independently cleared.
 
 Game rights remain with their owners.
 Base game content is not bundled.
+
+Application icon
+Original garage-and-spanner vector artwork created for this tool.
+Editable source: resources\app-icon.svg; PNG and ICO are generated from that source.
+No game texture or third-party icon artwork is included in the application icon.
