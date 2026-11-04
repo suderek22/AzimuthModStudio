@@ -28,6 +28,9 @@ static void Log(const char* fmt, ...) {
     if (g_api && g_mod) g_api->log(g_mod, buf);
 }
 
+#include "studio_input.h"
+#include "studio_pipelines.h"
+
 // ---------------------------------------------------------------- crash guard
 static void CriticalLog(const char* text) {
     EnterCriticalSection(&g_cs);
@@ -117,9 +120,10 @@ static uintptr_t GameBase() { return (uintptr_t)g_api->wait_for_code(10); }
 // ---------------------------------------------------------------- time and weather
 struct World { uintptr_t clock, weather; };
 
-static bool Signature(uintptr_t base, uintptr_t rva, const unsigned char* bytes, size_t n) {
-    unsigned char buf[8];
-    return Rd(base + rva, buf, n) && !memcmp(buf, bytes, n);
+template<size_t N>
+static bool Signature(uintptr_t base, uintptr_t rva, const unsigned char (&bytes)[N]) {
+    unsigned char buf[N];
+    return Rd(base + rva, buf, N) && !memcmp(buf, bytes, N);
 }
 
 static const char* GetWorld(World* w) {
@@ -127,7 +131,7 @@ static const char* GetWorld(World* w) {
     if (!base) return "game code is not ready";
     static const unsigned char s1[] = {0x48,0x8b,0x81,0x98,0,0,0,0xc3}, s2[] = {0x48,0x8b,0x81,0x80,4,0,0,0xc3},
                                s3[] = {0x48,0x8b,0x81,0x88,4,0,0,0xc3};
-    if (!Signature(base, 0x2e1520, s1, 8) || !Signature(base, 0x2e1f90, s2, 8) || !Signature(base, 0x2e2e90, s3, 8))
+    if (!Signature(base, 0x2e1520, s1) || !Signature(base, 0x2e1f90, s2) || !Signature(base, 0x2e2e90, s3))
         return "unsupported game build";
     uintptr_t a, b, ctx;
     if (!Ptr(base + 0x34aba60, &a) || !Ptr(a + 0x48, &b) || !Ptr(b + 0x98, &ctx) ||
@@ -155,9 +159,13 @@ static bool PutWeather(const World& w, float atm, float rain, float env) {
     return ok;
 }
 
+static void CheckSwapTimeout();
+static void CheckTrackTimeout();
 static DWORD WINAPI HoldThread(LPVOID) {
     for (;;) {
         Sleep(150);
+        CheckSwapTimeout();
+        CheckTrackTimeout();
         if (!g_hold) continue;
         World w;
         if (!GetWorld(&w)) PutWeather(w, g_wa, g_wr, g_we);
@@ -322,6 +330,50 @@ typedef uintptr_t (*StateFn)(void* self);
 static StateFn g_origLoad, g_origUnload, g_origSetChoice;
 static std::atomic<bool> g_haveLoad{false};
 static std::atomic<int> g_swapPending{-1};
+static std::atomic<int> g_swapActive{-1}, g_swapCompleted{-1}, g_swapFailed{-1};
+static std::atomic<int> g_swapSource{-1}, g_swapJobState{-1};
+static std::atomic<ULONGLONG> g_swapStarted{0}, g_swapProgressAt{0};
+static std::atomic<const char*> g_swapStage{"idle"};
+static std::atomic<bool> g_swapTimedOut{false};
+static std::atomic<void*> g_swapLoadSelf{nullptr};
+static std::atomic<uintptr_t> g_swapJob{0};
+static void SwapStage(const char* stage) {
+    g_swapStage = stage;
+    g_swapProgressAt = GetTickCount64();
+    Log("car: swap %d -> %d stage=%s elapsed=%llu ms", g_swapSource.load(), g_swapActive.load(),
+        stage, GetTickCount64() - g_swapStarted.load());
+}
+static void CheckSwapTimeout() {
+    int id = g_swapActive.load();
+    if (id < 0) id = g_swapPending.load();
+    ULONGLONG started = g_swapStarted.load();
+    if (id < 0 || !started || GetTickCount64() - started < 60000 || g_swapTimedOut.exchange(true)) return;
+    Log("car: ERROR swap %d -> %d timed out after %llu ms; stage=%s job=%p native_state=%d "
+        "stage_idle=%llu ms. Reload is still active; further swaps are blocked. "
+        "Use 'car details' for diagnostics. Stop/Run the wrapper if it does not recover; no unsafe flow skip attempted.",
+        g_swapSource.load(), id, GetTickCount64() - started, g_swapStage.load(), (void*)g_swapJob.load(),
+        g_swapJobState.load(), GetTickCount64() - g_swapProgressAt.load());
+}
+static void ReadLoadProgress(void* self) {
+    uintptr_t slot = 0, job = 0;
+    int state = -1;
+    // Resolve the load state's variable on its own game-thread TLS frame, just as 0x8af4f0 does.
+    __try {
+        void* parameter = (char*)self + 0x28;
+        void* frame = ((void*(*)(void*))(GameBase() + 0x1923a40))(parameter);
+        slot = (uintptr_t)((void*(*)(void*, void*))(GameBase() + 0x1923a70))(parameter, frame);
+        if (Ptr(slot, &job)) Rd(job + 0x598, &state, sizeof state);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        Log("car: ERROR cannot inspect native load progress");
+    }
+    uintptr_t oldJob = g_swapJob.exchange(job);
+    int oldState = g_swapJobState.exchange(state);
+    if (oldJob != job || oldState != state) {
+        g_swapProgressAt = GetTickCount64();
+        Log("car: swap %d native load job=%p state=%d (0=queued, 1=loading, 2=ready, 3=released); elapsed=%llu ms",
+            g_swapActive.load(), (void*)job, state, GetTickCount64() - g_swapStarted.load());
+    }
+}
 static DWORD g_stateTid = 0;
 static const uintptr_t RVA_LOAD_CAR = 0x8ae8e0, RVA_UNLOAD_CAR = 0x946af0, RVA_SETCHOICE = 0x921a60;
 
@@ -345,11 +397,42 @@ static uintptr_t LoadHook(void* self) {
     g_forceCar = -1;   // only the first load is forced; later menu swaps stay untouched
     g_stateTid = GetCurrentThreadId();
     g_haveLoad = true;
+    if (g_swapActive >= 0) {
+        g_swapLoadSelf = self;
+        SwapStage("LoadPlayerCar: submitting native load");
+    }
     uintptr_t result = g_origLoad(self);
     Log("car: LoadPlayerCar returned %llx", (unsigned long long)result);
+    if (g_swapActive >= 0) {
+        ReadLoadProgress(self);
+        SwapStage("LoadPlayerCar: waiting for native streaming");
+    }
     return result;
 }
+typedef bool (*LoadPollFn)(void*);
+static LoadPollFn g_origLoadPoll;
+static bool LoadPollHook(void* self) {
+    bool ready = g_origLoadPoll(self);
+    if (g_swapActive >= 0 && self == g_swapLoadSelf.load()) {
+        ReadLoadProgress(self);
+        if (ready) {
+            SwapStage("load ready; restoring position, camera and arrival cutscene");
+            g_swapLoadSelf = nullptr;
+        } else {
+            static ULONGLONG lastReport = 0;
+            ULONGLONG now = GetTickCount64();
+            if (now - lastReport >= 5000) {
+                lastReport = now;
+                Log("car: swap %d still waiting: stage=%s native_state=%d elapsed=%llu ms idle=%llu ms",
+                    g_swapActive.load(), g_swapStage.load(), g_swapJobState.load(),
+                    now - g_swapStarted.load(), now - g_swapProgressAt.load());
+            }
+        }
+    }
+    return ready;
+}
 static uintptr_t UnloadHook(void* self) {
+    if (g_swapActive >= 0) SwapStage("UnloadPlayerCar: releasing old car");
     Log("car: UnloadPlayerCar");
     return g_origUnload(self);
 }
@@ -366,8 +449,14 @@ typedef uintptr_t (*Fn4)(void*, void*, void*, void*);
 static Fn4 g_origWorld;
 static std::atomic<int> g_padInject{-1}, g_padFrames{0}, g_swapAction{12};
 static std::atomic<bool> g_reloadFlowReady{false};
-static std::atomic<int> g_swapActive{-1}, g_swapCompleted{-1}, g_swapFailed{-1};
+static std::atomic<bool> g_trackFlowReady{false};
 static bool PatchReloadFlow() {
+    const unsigned char trackDispatchSig[] = {0x48,0x8d,0x97,0x78,0x01,0x00,0x00};
+    const unsigned char canPauseSig[] = {0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x74,0x24,0x10};
+    if (!Signature(GameBase(), 0x964d41, trackDispatchSig) || !Signature(GameBase(), 0x963560, canPauseSig)) {
+        Log("track: ERROR unsupported native pause dispatch; no experimental flow changes written");
+        return false;
+    }
     std::wstring path = std::wstring(g_api->game_dir) + L"\\mediaoverride\\stateflow\\pause.xml";
     FILE* f = nullptr;
     if (_wfopen_s(&f, path.c_str(), L"rb") || !f) {
@@ -420,6 +509,29 @@ static bool PatchReloadFlow() {
         "<node state=\"ui_screens.show_hud_and_continue\" />\n"
         "</state>\n"
         "<state id=\"_cps_store_swap_position\"><behavior id=\"StoreCarPosition\" entity_id=\"_cps_swap_position\" locator_name=\"\" restore_facing_next_event=\"false\" /></state>");
+    start = xml.find("<state id=\"radio_right_flow\">");
+    end = xml.find("</state>", start);
+    if (start == std::string::npos || end == std::string::npos) {
+        Log("track: ERROR radio-right state not found; no flow changes written");
+        return false;
+    }
+    // The global pause caller survives map changes: return after group load,
+    // not group exit, so the native travel wrappers release their control.
+    xml.replace(start, end + strlen("</state>") - start,
+        "<state id=\"radio_right_flow\">\n"
+        "<node state=\"track_swap.switch_on_active_track\">\n"
+        "<exit id=\"mainland\" target=\"_entitled\" />\n"
+        "<exit id=\"island\" target=\"_mainland\" />\n"
+        "</node>\n"
+        "<node id=\"_entitled\" state=\"global.is_island_expansion_entitled\">\n"
+        "<exit id=\"yes\" target=\"_installed\" /><exit id=\"no\" target=\".exit\" />\n"
+        "</node>\n"
+        "<node id=\"_installed\" state=\"global.is_island_expansion_installed\">\n"
+        "<exit id=\"yes\" target=\"_island\" /><exit id=\"no\" target=\".exit\" />\n"
+        "</node>\n"
+        "<node id=\"_island\" state=\"track_swap.root_island\" cancel_on_game_control_owned=\"false\" wait_for_state_machine_exit=\"false\"><exit target=\".exit\" /></node>\n"
+        "<node id=\"_mainland\" state=\"track_swap.root_mainland\" cancel_on_game_control_owned=\"false\" wait_for_state_machine_exit=\"false\" />\n"
+        "</state>");
     if (_wfopen_s(&f, path.c_str(), L"wb") || !f) {
         Log("car: cannot write reload flow");
         return false;
@@ -427,16 +539,39 @@ static bool PatchReloadFlow() {
     bool ok = fwrite(xml.data(), 1, xml.size(), f) == xml.size();
     if (fclose(f)) ok = false;
     Log("car: reload flow patch %s (%zu bytes)", ok ? "installed" : "FAILED", xml.size());
+    g_trackFlowReady = ok;
     return ok;
 }
 static StateFn g_origWaitPause;
+static void* PlayerCar();
+#include "studio_travel.h"
 static uintptr_t WaitPauseHook(void* self) {
+    if (DispatchTrack(self)) return 0;
     int completed = g_swapActive.exchange(-1);
     if (completed >= 0) {
         g_swapCompleted = completed;
+        g_swapStage = "complete";
+        g_swapLoadSelf = nullptr;
         Log("car: reload flow complete for id %d; gameplay resumed", completed);
+        if (g_tpActive.exchange(false))
+            Log(g_tpApplied ? "tp: native reload complete; gameplay resumed at requested destination" :
+                "tp: ERROR reload completed but target position was not applied");
     }
     EnterCriticalSection(&g_cs);
+    if (g_tpQueued.exchange(false)) {
+        uintptr_t obj = 0; int current = -1;
+        if (GetTickCount64() - g_tpQueuedAt > 60000 || ActiveTrack() != 542 || !TrackSettled() ||
+            !ReadChoiceId(&current, &obj)) {
+            Log("tp: ERROR request expired, map changed or player choice unavailable; no teleport performed");
+        } else {
+            g_tpActive = true;
+            g_swapCompleted = g_swapFailed = -1;
+            g_swapStarted = g_swapProgressAt = GetTickCount64();
+            g_swapTimedOut = false;
+            g_swapJobState = -1; g_swapJob = 0;
+            g_swapPending = current;
+        }
+    }
     int id = g_swapPending.exchange(-1);
     if (id >= 0) g_swapActive = id;
     LeaveCriticalSection(&g_cs);
@@ -444,11 +579,14 @@ static uintptr_t WaitPauseHook(void* self) {
         uintptr_t obj = 0;
         int before = -1;
         if (ReadChoiceId(&before, &obj)) {
+            g_swapSource = before;
+            SwapStage("dispatching pause reload flow");
             g_origChoice((void*)obj, id);
             Log("car: dispatching native reload flow %d -> %d", before, id);
             return ((uintptr_t(*)(void*, void*))(GameBase() + 0x1925260))(self, (char*)self + 0x148);
         }
         g_swapFailed = id;
+        g_swapStage = "choice object unavailable";
         g_swapActive = -1;
         Log("car: reload request failed: choice object unavailable");
     }
@@ -676,6 +814,8 @@ typedef bool (*PressFn)(void*, int, int, bool);
 static PressFn g_origPressed;
 static bool PressedHook(void* self, int action, int player, bool flag) {
     bool r = g_origPressed(self, action, player, flag);
+    // The experimental pause-flow slot is command-only: physical radio input must never change maps.
+    if (action == 24 && g_trackFlowReady) return false;
     static unsigned seen = 0;
     if (r && action >= 0 && action < 32 && !(seen & (1u << action))) {
         seen |= 1u << action;
@@ -697,7 +837,23 @@ static DWORD WINAPI CarThread(LPVOID) {
     if (GetPrivateProfileIntW(L"Car", L"ExperimentalReload", 0, ini.c_str())) {
         g_reloadFlowReady = PatchReloadFlow();
         g_api->hook_function(g_mod, "WaitForPause reload dispatch", (void*)(base + 0x964810), (void*)WaitPauseHook, (void**)&g_origWaitPause);
+        FH2Hook* poll = g_api->hook_function(g_mod, "LoadPlayerCar progress", (void*)(base + 0x8af4f0),
+                                           (void*)LoadPollHook, (void**)&g_origLoadPoll);
+        if (!poll) Log("car: ERROR native load progress hook unavailable");
+        const unsigned char storeSig[] = {0x40,0x55,0x56,0x57,0x41,0x54};
+        const unsigned char vectorSig[] = {0xc5,0xf8,0x28,0x02,0xc5,0xf8,0x29,0x41,0x10,0xc3};
+        if (Signature(base, 0x93ca40, storeSig) && Signature(base, 0xa6a210, vectorSig)) {
+            FH2Hook* store = g_api->hook_function(g_mod, "Teleport StoreCarPosition", (void*)(base + 0x93ca40),
+                (void*)StorePositionHook, (void**)&g_origStorePosition);
+            FH2Hook* vector = g_api->hook_function(g_mod, "Teleport native restore vector", (void*)(base + 0xa6a210),
+                (void*)StoreVectorHook, (void**)&g_origStoreVector);
+            g_tpHooks = store && vector;
+        }
+        if (!g_tpHooks) Log("tp: ERROR native position hooks unavailable");
     }
+    FH2Hook* trace = g_api->hook_function(g_mod, "Map transition recorder", (void*)(base + 0x1925260),
+        (void*)StudioTrace::Dispatch, (void**)&StudioTrace::original);
+    StudioTrace::ready = trace != nullptr;
     g_api->hook_function(g_mod, "Input::WasPressed", (void*)(base + 0x1072510), (void*)PressedHook, (void**)&g_origPressed);
     FH2Hook* h2 = g_api->hook_pointer(g_mod, "PlayerCarChoice::Set", (void**)(vt + 0x1b8), (void*)ChoiceHook, (void**)&g_origChoice);
     FH2Hook* h3 = g_api->hook_function(g_mod, "LoadPlayerCar", (void*)(base + RVA_LOAD_CAR), (void*)LoadHook, (void**)&g_origLoad);
@@ -730,10 +886,14 @@ static bool ValidateCarId(int id, char* reply, size_t size) {
     sqlite3_stmt* statement = nullptr;
     int rc = sqlite3_open_v2(utf8.c_str(), &db, SQLITE_OPEN_READONLY, nullptr);
     if (rc == SQLITE_OK)
-        rc = sqlite3_prepare_v2(db, "SELECT 1 FROM Data_Car WHERE Id=? LIMIT 1", -1, &statement, nullptr);
+        rc = sqlite3_prepare_v2(db, "SELECT MediaName FROM Data_Car WHERE Id=? LIMIT 1", -1, &statement, nullptr);
     if (rc == SQLITE_OK) rc = sqlite3_bind_int(statement, 1, id);
     if (rc == SQLITE_OK) rc = sqlite3_step(statement);
     bool found = rc == SQLITE_ROW;
+    if (found) {
+        const unsigned char* media = sqlite3_column_text(statement, 0);
+        Log("car: validated target=%d media=%s database=%s", id, media ? (const char*)media : "(null)", utf8.c_str());
+    }
     if (!found) {
         if (rc == SQLITE_DONE)
             Reply(reply, size, "error: car ID %d does not exist in the active game database; no swap performed", id);
@@ -747,6 +907,15 @@ static bool ValidateCarId(int id, char* reply, size_t size) {
     return found;
 }
 static void CmdCar(const char* args, char* reply, size_t size) {
+    if (!strcmp(args, "details")) {
+        ULONGLONG started = g_swapStarted.load();
+        Reply(reply, size, "source=%d target=%d pending=%d completed=%d stage=%s elapsed_ms=%llu "
+            "native_job=%p native_state=%d timed_out=%d",
+            g_swapSource.load(), g_swapActive.load(), g_swapPending.load(), g_swapCompleted.load(),
+            g_swapStage.load(), started ? GetTickCount64() - started : 0, (void*)g_swapJob.load(),
+            g_swapJobState.load(), (int)g_swapTimedOut.load());
+        return;
+    }
     if (!strcmp(args, "status")) {
         int active = g_swapActive.load(), pending = g_swapPending.load();
         if (active >= 0) Reply(reply, size, "swapping %d", active);
@@ -761,20 +930,28 @@ static void CmdCar(const char* args, char* reply, size_t size) {
     long parsed = strtol(args, &end, 10);
     while (end && (*end == ' ' || *end == '\t')) ++end;
     if (errno == ERANGE || end == args || !end || *end || parsed <= 0 || parsed > INT_MAX) {
-        Reply(reply, size, "error: invalid car ID; use car <positive integer ID> | status; no swap performed"); return;
+        Reply(reply, size, "error: invalid car ID; use car <positive integer ID> | status | details; no swap performed"); return;
     }
     int id = (int)parsed;
     if (!ValidateCarId(id, reply, size)) return;
     if (!g_haveLoad) { Reply(reply, size, "error: no player car has been loaded yet"); return; }
     if (!g_reloadFlowReady || !g_origWaitPause) { Reply(reply, size, "error: live reload is experimental and disabled; use Test in game to restart"); return; }
     EnterCriticalSection(&g_cs);
-    bool busy = g_swapActive >= 0 || g_swapPending >= 0;
+    bool busy = g_swapActive >= 0 || g_swapPending >= 0 || g_tpQueued || g_tpActive ||
+                g_trackPending >= 0 || g_trackActive >= 0 || !TrackSettled();
     if (!busy) {
         g_swapCompleted = g_swapFailed = -1;
+        g_swapStarted = g_swapProgressAt = GetTickCount64();
+        g_swapTimedOut = false;
+        g_swapStage = "queued; waiting for free-roam pause flow";
+        g_swapJobState = -1;
+        g_swapJob = 0;
+        g_swapLoadSelf = nullptr;
         g_swapPending = id;
     }
     LeaveCriticalSection(&g_cs);
-    if (busy) { Reply(reply, size, "error: car reload already in progress"); return; }
+    if (busy) { Reply(reply, size, "error: map travel or car reload already in progress"); return; }
+    Log("car: swap requested target=%d; waiting for game-thread dispatch", id);
     Reply(reply, size, "swapping to car %d", id);
 }
 
@@ -803,6 +980,11 @@ static void CmdHandler(void*, const char* name, const char* args, char* reply, s
     else if (!strcmp(name, "animation")) CmdAnimation(args, reply, size);
     else if (!strcmp(name, "animations")) CmdAnimations(reply, size);
     else if (!strcmp(name, "animationinfo")) CmdAnimationInfo(reply, size);
+    else if (!strcmp(name, "input")) StudioInput::Command(args, reply, size);
+    else if (!strcmp(name, "pipelines")) StudioPipelines::Command(args, reply, size);
+    else if (!strcmp(name, "teleport")) CmdTeleport(args, reply, size);
+    else if (!strcmp(name, "track")) CmdTrack(args, reply, size);
+    else if (!strcmp(name, "trace")) StudioTrace::Command(args, reply, size);
     else Reply(reply, size, "error: unknown command");
 }
 
@@ -825,6 +1007,8 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     GetModuleFileNameW(self, path, MAX_PATH);
     g_dir = path; g_dir.resize(g_dir.find_last_of(L'\\'));
     g_logPath = g_dir + L"\\CarPackStudio-critical.log";
+    StudioPipelines::Install();
+    CloseHandle(CreateThread(0, 0, StudioInput::Install, 0, 0, 0));
 
     std::wstring ini = g_dir + L"\\CarPackStudio.ini";
     g_recover = GetPrivateProfileIntW(L"CrashGuard", L"Recover", 1, ini.c_str()) != 0;
@@ -849,6 +1033,11 @@ FH2MOD_EXPORT int fh2mod_init(const FH2ModApi* api) {
     api->add_command(g_mod, "animation", "animation <state>: play a state on the active car (DoorsUnlocked)", CmdHandler, nullptr);
     api->add_command(g_mod, "animations", "list playable states in the active car's animation graph", CmdHandler, nullptr);
     api->add_command(g_mod, "animationinfo", "log animation graph parameters for diagnosis", CmdHandler, nullptr);
+    api->add_command(g_mod, "input", "input record <0-3> | play | stop | status", CmdHandler, nullptr);
+    api->add_command(g_mod, "pipelines", "pipelines on | off | status: actual D3D12 pipeline diagnostics", CmdHandler, nullptr);
+    api->add_command(g_mod, "teleport", "Internal teleport transport; use tp Anthem <place> in Studio", CmdHandler, nullptr);
+    api->add_command(g_mod, "track", "track 542 | 549 | status: native Anthem / TheIsland travel", CmdHandler, nullptr);
+    api->add_command(g_mod, "trace", "trace start | stop | status: record native map/stateflow transitions", CmdHandler, nullptr);
     Log("CarPackStudio ready: crash guard %s", g_recover ? "recovering" : "logging");
     return 0;
 }

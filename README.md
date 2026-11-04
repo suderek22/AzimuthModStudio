@@ -39,6 +39,30 @@ Pack installation persists on disk. **Test in game** builds/installs before laun
 
 Per-car uninstall keeps the project car; installing/testing that project restores it. Removing a project row alone does not uninstall an existing copy.
 
+## Source testing additions
+
+These changes are available through `python run.py`; the existing 0.1.0 EXE/ZIP has not been rebuilt.
+Restart the wrapper once to load the updated bundled Studio DLL.
+
+- `track TheIsland` / `track Anthem` (or `track 549` / `track 542`): switch maps through the
+  game's native travel flow without restarting Azimuth. `track list` lists supported maps;
+  `track status` reports the current/target track, loading stage and timeout state.
+  Storm Island must already be mounted in Azimuth; the command retains the game's DLC checks.
+  Settings preparation preserves the selected DLC content and its additional discovery folders.
+  Start in settled free roam. Concurrent teleport/car reload requests are rejected.
+  Progress is logged; a 90-second timeout reports the failure without force-completing an active load.
+  In the experimental sandbox flow, physical radio-right input is reserved/disabled so it cannot trigger map travel.
+- `tp Anthem Festival` or `tp Anthem Nicea`: mainland teleport using the native same-car reload/arrival flow.
+  Other destinations: Saint-Martin, Sisteron, Castelletto, Montellino, San Giovanni and Airport.
+  `tp Anthem Airport` uses XYZ 425.574, 110.821, -1478.082. `tp list` lists all supported entries, even offline.
+- **Tools → Map transition capture**: record native transitions while changing maps manually; stop and export JSONL.
+- `debug Azimuth`: actual D3D12 pipeline creation/cache-load events with thread IDs, durations and HRESULTs.
+  This is scoped pipeline instrumentation, not a complete Azimuth debug build. Mod debugging streams each mod's own logs.
+- **Scripts → Record / play XInput scripts**: controller recording/playback, JSON load/save and neutral release.
+  A connected controller is required. Playback uses wall-clock timing; focus the game when playing a script.
+- The model viewer filters meshes by LOD suffix (e.g. `engineBay_a_LOD0`) while preserving per-mesh checkbox choices.
+  Legacy LOD prefixes are also supported.
+
 ## Technical details
 
 | Item | Details |
@@ -46,7 +70,7 @@ Per-car uninstall keeps the project car; installing/testing that project restore
 | Platform | Windows x64. No separate Python or sandbox-runtime installation. |
 | Settings | `%APPDATA%\CarPackStudio\settings.json` |
 | Default sandbox | `%LOCALAPPDATA%\CarPackStudio\runtime` |
-| Launch arguments | `--game=fh2 --skip-launcher` |
+| Launch arguments | Default: `--game=fh2 --skip-launcher`. Editable in File → Settings → Azimuth launch arguments; applies on the next launch. |
 | Telemetry HTTP port | `8080` by default, configurable in Settings. |
 | Project | `.cpsproj` with `cars` and `sources` folders. |
 | Installed pack metadata/SQL | `<runtime>\fh2-mods\CarPacks\<pack>` |
