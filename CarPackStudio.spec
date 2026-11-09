@@ -30,5 +30,5 @@ coll = COLLECT(
      ("xg.dll", "ffmpeg.exe", "ffmpeg-license.txt", "ffmpeg-notice.txt")],
     [("README.txt", str(root / "README.txt"), "DATA"),
      ("THIRD-PARTY-NOTICES.txt", str(root / "THIRD-PARTY-NOTICES.txt"), "DATA")],
-    strip=False, upx=False, name="CarPackStudio-0.2.2-beta",
+    strip=False, upx=False, name="CarPackStudio-0.2.3-beta",
 )

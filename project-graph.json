@@ -14,825 +14,865 @@
       "id": "CarPackStudio.spec",
       "kind": "file",
       "path": "CarPackStudio.spec",
-      "sha256": "a45a40b1cb95fa989892141592a345db3680f448638999cc50dd97fe4a3caf38"
+      "sha256": "dbb315a187916dfc0aab73dc15a6a1134d703160b25528d2401d91829e6321f0"
     },
     {
       "id": "README.md",
       "kind": "file",
       "path": "README.md",
-      "sha256": "aa6b9b23b7ee74545cf50a0e20dfc5657162c32ddf1ee4895260fc06df2b4ac2"
+      "sha256": "6bdda4f61bd8622dd87888cf91cb5f065f982aead962dd38c2c6d75d96d6f9aa"
     },
     {
       "id": "README.txt",
       "kind": "file",
       "path": "README.txt",
-      "sha256": "b020f7f9de9897918464bff95c259ed458ebeabae4ca2eed932ebe2a9a887d17"
+      "sha256": "a858a4858c841be4702d6d9c23c30abd5f581b4e0f05e0f0260f8ad620781a8b"
     },
     {
       "id": "THIRD-PARTY-NOTICES.txt",
       "kind": "file",
       "path": "THIRD-PARTY-NOTICES.txt",
-      "sha256": "9bc9d0d182d8d76aeeada87065b048e5ab008f90c50755ac7c91f1a17156fbcd"
+      "sha256": "955f907cb3973d3a30b9ba2be186160f1c3e81b8913024e52841d333204e48f3"
     },
     {
       "id": "build-release.ps1",
       "kind": "file",
       "path": "build-release.ps1",
-      "sha256": "bedc0a2e81545aac07b34f81ce0af655730132efa6e3b57df9ea1fd0b48cd71a"
+      "sha256": "823a139f8cc228c747e1af4127952a4e9dcdedcadd7da5d1db537f04c5009623"
     },
     {
       "id": "cps/__init__.py",
       "kind": "file",
       "path": "cps/__init__.py",
-      "sha256": "32f90584adfdcfb9e3fa4bcd7cbfed0d7d7e5a16d80875aa3dda2adeaf8c7027"
+      "sha256": "334e249d2f93de2dfe58b988cc3a2aee5daa08dc85ba94a8a1760b886b926f9b"
     },
     {
       "id": "cps/app.py",
       "kind": "file",
       "path": "cps/app.py",
-      "sha256": "6476c4c911f1e1e5092ff1156830cd280b7bd57c95efe644f13d2c997b1e34cf"
+      "sha256": "1b8850594bc292bc72a9dbccc1dabddaf796a3420a09699ac396b77fe1103b45"
     },
     {
       "id": "cps/app.py::CarBrowser",
       "kind": "class",
       "path": "cps/app.py",
       "name": "CarBrowser",
-      "line": 167,
-      "end_line": 240
+      "line": 170,
+      "end_line": 243
     },
     {
       "id": "cps/app.py::CarBrowser.__init__",
       "kind": "function",
       "path": "cps/app.py",
       "name": "CarBrowser.__init__",
-      "line": 170,
-      "end_line": 199
+      "line": 173,
+      "end_line": 202
     },
     {
       "id": "cps/app.py::CarBrowser._filter",
       "kind": "function",
       "path": "cps/app.py",
       "name": "CarBrowser._filter",
-      "line": 219,
-      "end_line": 220
+      "line": 222,
+      "end_line": 223
     },
     {
       "id": "cps/app.py::CarBrowser._menu",
       "kind": "function",
       "path": "cps/app.py",
       "name": "CarBrowser._menu",
-      "line": 225,
-      "end_line": 230
+      "line": 228,
+      "end_line": 233
     },
     {
       "id": "cps/app.py::CarBrowser.car_at",
       "kind": "function",
       "path": "cps/app.py",
       "name": "CarBrowser.car_at",
-      "line": 222,
-      "end_line": 223
+      "line": 225,
+      "end_line": 226
     },
     {
       "id": "cps/app.py::CarBrowser.load",
       "kind": "function",
       "path": "cps/app.py",
       "name": "CarBrowser.load",
-      "line": 201,
-      "end_line": 217
+      "line": 204,
+      "end_line": 220
     },
     {
       "id": "cps/app.py::CarBrowser.menu_for",
       "kind": "function",
       "path": "cps/app.py",
       "name": "CarBrowser.menu_for",
-      "line": 232,
-      "end_line": 240
+      "line": 235,
+      "end_line": 243
     },
     {
       "id": "cps/app.py::Explorer",
       "kind": "class",
       "path": "cps/app.py",
       "name": "Explorer",
-      "line": 243,
-      "end_line": 328
+      "line": 246,
+      "end_line": 331
     },
     {
       "id": "cps/app.py::Explorer.__init__",
       "kind": "function",
       "path": "cps/app.py",
       "name": "Explorer.__init__",
-      "line": 244,
-      "end_line": 266
+      "line": 247,
+      "end_line": 269
     },
     {
       "id": "cps/app.py::Explorer._menu",
       "kind": "function",
       "path": "cps/app.py",
       "name": "Explorer._menu",
-      "line": 317,
-      "end_line": 328
+      "line": 320,
+      "end_line": 331
     },
     {
       "id": "cps/app.py::Explorer._name",
       "kind": "function",
       "path": "cps/app.py",
       "name": "Explorer._name",
-      "line": 309,
-      "end_line": 310
+      "line": 312,
+      "end_line": 313
     },
     {
       "id": "cps/app.py::Explorer._open",
       "kind": "function",
       "path": "cps/app.py",
       "name": "Explorer._open",
-      "line": 312,
-      "end_line": 315
+      "line": 315,
+      "end_line": 318
     },
     {
       "id": "cps/app.py::Explorer.refill",
       "kind": "function",
       "path": "cps/app.py",
       "name": "Explorer.refill",
-      "line": 277,
-      "end_line": 307
+      "line": 280,
+      "end_line": 310
     },
     {
       "id": "cps/app.py::Explorer.set_car",
       "kind": "function",
       "path": "cps/app.py",
       "name": "Explorer.set_car",
-      "line": 268,
-      "end_line": 275
+      "line": 271,
+      "end_line": 278
     },
     {
       "id": "cps/app.py::MainWindow",
       "kind": "class",
       "path": "cps/app.py",
       "name": "MainWindow",
-      "line": 437,
-      "end_line": 1536
+      "line": 440,
+      "end_line": 1651
     },
     {
       "id": "cps/app.py::MainWindow.__init__",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.__init__",
-      "line": 438,
-      "end_line": 515
+      "line": 441,
+      "end_line": 522
     },
     {
       "id": "cps/app.py::MainWindow._after_run",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._after_run",
-      "line": 1301,
-      "end_line": 1309
+      "line": 1412,
+      "end_line": 1420
     },
     {
       "id": "cps/app.py::MainWindow._animation_menu",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._animation_menu",
-      "line": 1350,
-      "end_line": 1403
+      "line": 1461,
+      "end_line": 1514
+    },
+    {
+      "id": "cps/app.py::MainWindow._apply_default_dock_layout",
+      "kind": "function",
+      "path": "cps/app.py",
+      "name": "MainWindow._apply_default_dock_layout",
+      "line": 618,
+      "end_line": 632
     },
     {
       "id": "cps/app.py::MainWindow._asset_widget",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._asset_widget",
-      "line": 1139,
-      "end_line": 1160
+      "line": 1229,
+      "end_line": 1250
     },
     {
       "id": "cps/app.py::MainWindow._car_title",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._car_title",
-      "line": 905,
-      "end_line": 917
+      "line": 995,
+      "end_line": 1007
     },
     {
       "id": "cps/app.py::MainWindow._close_tab",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._close_tab",
-      "line": 1217,
-      "end_line": 1227
+      "line": 1328,
+      "end_line": 1338
     },
     {
       "id": "cps/app.py::MainWindow._dock",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._dock",
-      "line": 517,
-      "end_line": 524
+      "line": 524,
+      "end_line": 531
     },
     {
       "id": "cps/app.py::MainWindow._dock_drop_area",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._dock_drop_area",
-      "line": 586,
-      "end_line": 594
+      "line": 593,
+      "end_line": 601
     },
     {
       "id": "cps/app.py::MainWindow._drop_dock_tab",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._drop_dock_tab",
-      "line": 596,
-      "end_line": 604
+      "line": 603,
+      "end_line": 612
     },
     {
       "id": "cps/app.py::MainWindow._hex",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._hex",
-      "line": 1077,
-      "end_line": 1085
+      "line": 1167,
+      "end_line": 1175
+    },
+    {
+      "id": "cps/app.py::MainWindow._layout_path",
+      "kind": "function",
+      "path": "cps/app.py",
+      "name": "MainWindow._layout_path",
+      "line": 615,
+      "end_line": 616
     },
     {
       "id": "cps/app.py::MainWindow._load_project",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._load_project",
-      "line": 773,
-      "end_line": 779
+      "line": 863,
+      "end_line": 869
     },
     {
       "id": "cps/app.py::MainWindow._load_zip",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._load_zip",
-      "line": 1018,
-      "end_line": 1040
+      "line": 1108,
+      "end_line": 1130
     },
     {
       "id": "cps/app.py::MainWindow._load_zip.T",
       "kind": "class",
       "path": "cps/app.py",
       "name": "MainWindow._load_zip.T",
-      "line": 1034,
-      "end_line": 1035
+      "line": 1124,
+      "end_line": 1125
     },
     {
       "id": "cps/app.py::MainWindow._menus",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._menus",
-      "line": 606,
-      "end_line": 670
+      "line": 694,
+      "end_line": 760
     },
     {
       "id": "cps/app.py::MainWindow._mods_dir",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._mods_dir",
-      "line": 1230,
-      "end_line": 1231
+      "line": 1341,
+      "end_line": 1342
     },
     {
       "id": "cps/app.py::MainWindow._open_packcar",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._open_packcar",
-      "line": 1009,
-      "end_line": 1016
+      "line": 1099,
+      "end_line": 1106
     },
     {
       "id": "cps/app.py::MainWindow._pack_item_open",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._pack_item_open",
-      "line": 808,
-      "end_line": 809
+      "line": 898,
+      "end_line": 899
     },
     {
       "id": "cps/app.py::MainWindow._pack_menu",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._pack_menu",
-      "line": 850,
-      "end_line": 858
+      "line": 940,
+      "end_line": 948
     },
     {
       "id": "cps/app.py::MainWindow._pack_selected",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._pack_selected",
-      "line": 811,
-      "end_line": 815
+      "line": 901,
+      "end_line": 905
     },
     {
       "id": "cps/app.py::MainWindow._preflight",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._preflight",
-      "line": 1285,
-      "end_line": 1299
+      "line": 1396,
+      "end_line": 1410
     },
     {
       "id": "cps/app.py::MainWindow._prepare_for_run",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._prepare_for_run",
-      "line": 1271,
-      "end_line": 1283
+      "line": 1382,
+      "end_line": 1394
     },
     {
       "id": "cps/app.py::MainWindow._project_loaded",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._project_loaded",
-      "line": 781,
-      "end_line": 786
+      "line": 871,
+      "end_line": 876
+    },
+    {
+      "id": "cps/app.py::MainWindow._reset_window_layout",
+      "kind": "function",
+      "path": "cps/app.py",
+      "name": "MainWindow._reset_window_layout",
+      "line": 679,
+      "end_line": 692
+    },
+    {
+      "id": "cps/app.py::MainWindow._restore_window_layout",
+      "kind": "function",
+      "path": "cps/app.py",
+      "name": "MainWindow._restore_window_layout",
+      "line": 634,
+      "end_line": 656
     },
     {
       "id": "cps/app.py::MainWindow._save_text",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._save_text",
-      "line": 1087,
-      "end_line": 1091
+      "line": 1177,
+      "end_line": 1181
+    },
+    {
+      "id": "cps/app.py::MainWindow._save_window_layout",
+      "kind": "function",
+      "path": "cps/app.py",
+      "name": "MainWindow._save_window_layout",
+      "line": 658,
+      "end_line": 677
     },
     {
       "id": "cps/app.py::MainWindow._selected_car_id",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._selected_car_id",
-      "line": 1310,
-      "end_line": 1322
+      "line": 1421,
+      "end_line": 1433
     },
     {
       "id": "cps/app.py::MainWindow._startup",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._startup",
-      "line": 698,
-      "end_line": 706
+      "line": 788,
+      "end_line": 796
     },
     {
       "id": "cps/app.py::MainWindow._sync_extra_cars",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._sync_extra_cars",
-      "line": 1248,
-      "end_line": 1253
+      "line": 1359,
+      "end_line": 1364
     },
     {
       "id": "cps/app.py::MainWindow._teleport_menu",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._teleport_menu",
-      "line": 679,
-      "end_line": 681
+      "line": 769,
+      "end_line": 771
     },
     {
       "id": "cps/app.py::MainWindow._test_car",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._test_car",
-      "line": 1341,
-      "end_line": 1348
+      "line": 1452,
+      "end_line": 1459
     },
     {
       "id": "cps/app.py::MainWindow._travel_binds_changed",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._travel_binds_changed",
-      "line": 673,
-      "end_line": 677
+      "line": 763,
+      "end_line": 767
     },
     {
       "id": "cps/app.py::MainWindow._update_message",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow._update_message",
-      "line": 708,
-      "end_line": 710
+      "line": 798,
+      "end_line": 800
     },
     {
       "id": "cps/app.py::MainWindow.add_clone",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.add_clone",
-      "line": 966,
-      "end_line": 988
+      "line": 1056,
+      "end_line": 1078
     },
     {
       "id": "cps/app.py::MainWindow.build",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.build",
-      "line": 1233,
-      "end_line": 1246
+      "line": 1344,
+      "end_line": 1357
     },
     {
       "id": "cps/app.py::MainWindow.closeEvent",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.closeEvent",
-      "line": 1521,
-      "end_line": 1536
+      "line": 1632,
+      "end_line": 1651
     },
     {
       "id": "cps/app.py::MainWindow.credits",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.credits",
-      "line": 1487,
-      "end_line": 1496
+      "line": 1598,
+      "end_line": 1607
     },
     {
       "id": "cps/app.py::MainWindow.ensure_in_pack",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.ensure_in_pack",
-      "line": 990,
-      "end_line": 1000
+      "line": 1080,
+      "end_line": 1090
     },
     {
       "id": "cps/app.py::MainWindow.eventFilter",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.eventFilter",
-      "line": 526,
-      "end_line": 584
+      "line": 533,
+      "end_line": 591
     },
     {
       "id": "cps/app.py::MainWindow.export_file",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.export_file",
-      "line": 1104,
-      "end_line": 1108
+      "line": 1194,
+      "end_line": 1198
     },
     {
       "id": "cps/app.py::MainWindow.export_zip",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.export_zip",
-      "line": 1468,
-      "end_line": 1485
+      "line": 1579,
+      "end_line": 1596
     },
     {
       "id": "cps/app.py::MainWindow.how_to",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.how_to",
-      "line": 1498,
-      "end_line": 1519
+      "line": 1609,
+      "end_line": 1630
     },
     {
       "id": "cps/app.py::MainWindow.import_car",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.import_car",
-      "line": 919,
-      "end_line": 964
+      "line": 1009,
+      "end_line": 1054
     },
     {
       "id": "cps/app.py::MainWindow.install",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.install",
-      "line": 1255,
-      "end_line": 1269
+      "line": 1366,
+      "end_line": 1380
     },
     {
       "id": "cps/app.py::MainWindow.load_game",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.load_game",
-      "line": 734,
-      "end_line": 751
+      "line": 824,
+      "end_line": 841
     },
     {
       "id": "cps/app.py::MainWindow.log",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.log",
-      "line": 695,
-      "end_line": 696
+      "line": 785,
+      "end_line": 786
     },
     {
       "id": "cps/app.py::MainWindow.need_project",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.need_project",
-      "line": 797,
-      "end_line": 800
+      "line": 887,
+      "end_line": 890
     },
     {
       "id": "cps/app.py::MainWindow.new_project",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.new_project",
-      "line": 754,
-      "end_line": 766
+      "line": 844,
+      "end_line": 856
     },
     {
       "id": "cps/app.py::MainWindow.open_asset_path",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.open_asset_path",
-      "line": 1174,
-      "end_line": 1205
+      "line": 1264,
+      "end_line": 1316
     },
     {
       "id": "cps/app.py::MainWindow.open_car",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.open_car",
-      "line": 1002,
-      "end_line": 1007
+      "line": 1092,
+      "end_line": 1097
     },
     {
       "id": "cps/app.py::MainWindow.open_disk_file",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.open_disk_file",
-      "line": 1129,
-      "end_line": 1136
+      "line": 1219,
+      "end_line": 1226
     },
     {
       "id": "cps/app.py::MainWindow.open_file",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.open_file",
-      "line": 1053,
-      "end_line": 1074
+      "line": 1143,
+      "end_line": 1164
     },
     {
       "id": "cps/app.py::MainWindow.open_game_files_manager",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.open_game_files_manager",
-      "line": 1162,
-      "end_line": 1172
+      "line": 1252,
+      "end_line": 1262
     },
     {
       "id": "cps/app.py::MainWindow.open_platform_log",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.open_platform_log",
-      "line": 1207,
-      "end_line": 1215
+      "line": 1318,
+      "end_line": 1326
     },
     {
       "id": "cps/app.py::MainWindow.open_project",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.open_project",
-      "line": 768,
-      "end_line": 771
+      "line": 858,
+      "end_line": 861
     },
     {
       "id": "cps/app.py::MainWindow.project_changed",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.project_changed",
-      "line": 793,
-      "end_line": 795
+      "line": 883,
+      "end_line": 885
     },
     {
       "id": "cps/app.py::MainWindow.read_entry",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.read_entry",
-      "line": 1043,
-      "end_line": 1051
+      "line": 1133,
+      "end_line": 1141
     },
     {
       "id": "cps/app.py::MainWindow.refresh_pack_list",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.refresh_pack_list",
-      "line": 802,
-      "end_line": 806
+      "line": 892,
+      "end_line": 896
     },
     {
       "id": "cps/app.py::MainWindow.remove_car",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.remove_car",
-      "line": 817,
-      "end_line": 848
+      "line": 907,
+      "end_line": 938
     },
     {
       "id": "cps/app.py::MainWindow.replace_file",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.replace_file",
-      "line": 1110,
-      "end_line": 1117
+      "line": 1200,
+      "end_line": 1207
     },
     {
       "id": "cps/app.py::MainWindow.revert_file",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.revert_file",
-      "line": 1119,
-      "end_line": 1127
+      "line": 1209,
+      "end_line": 1217
     },
     {
       "id": "cps/app.py::MainWindow.save_project",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.save_project",
-      "line": 788,
-      "end_line": 791
+      "line": 878,
+      "end_line": 881
     },
     {
       "id": "cps/app.py::MainWindow.settings",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.settings",
-      "line": 712,
-      "end_line": 732
+      "line": 802,
+      "end_line": 822
     },
     {
       "id": "cps/app.py::MainWindow.show_sql",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.show_sql",
-      "line": 1459,
-      "end_line": 1466
+      "line": 1570,
+      "end_line": 1577
     },
     {
       "id": "cps/app.py::MainWindow.spawn_car",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.spawn_car",
-      "line": 898,
-      "end_line": 903
+      "line": 988,
+      "end_line": 993
     },
     {
       "id": "cps/app.py::MainWindow.test_base_car",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.test_base_car",
-      "line": 1337,
-      "end_line": 1339
+      "line": 1448,
+      "end_line": 1450
     },
     {
       "id": "cps/app.py::MainWindow.test_in_game",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.test_in_game",
-      "line": 1324,
-      "end_line": 1335
+      "line": 1435,
+      "end_line": 1446
     },
     {
       "id": "cps/app.py::MainWindow.time_weather",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.time_weather",
-      "line": 1405,
-      "end_line": 1446
+      "line": 1516,
+      "end_line": 1557
     },
     {
       "id": "cps/app.py::MainWindow.time_weather.add",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.time_weather.add",
-      "line": 1411,
-      "end_line": 1422
+      "line": 1522,
+      "end_line": 1533
     },
     {
       "id": "cps/app.py::MainWindow.time_weather.apply_time",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.time_weather.apply_time",
-      "line": 1431,
-      "end_line": 1434
+      "line": 1542,
+      "end_line": 1545
     },
     {
       "id": "cps/app.py::MainWindow.time_weather.apply_weather",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.time_weather.apply_weather",
-      "line": 1436,
-      "end_line": 1438
+      "line": 1547,
+      "end_line": 1549
     },
     {
       "id": "cps/app.py::MainWindow.uninstall",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.uninstall",
-      "line": 1448,
-      "end_line": 1457
+      "line": 1559,
+      "end_line": 1568
     },
     {
       "id": "cps/app.py::MainWindow.uninstall_selected_car",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.uninstall_selected_car",
-      "line": 860,
-      "end_line": 895
+      "line": 950,
+      "end_line": 985
     },
     {
       "id": "cps/app.py::MainWindow.wrapper_volume",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.wrapper_volume",
-      "line": 683,
-      "end_line": 693
+      "line": 773,
+      "end_line": 783
     },
     {
       "id": "cps/app.py::MainWindow.write_override",
       "kind": "function",
       "path": "cps/app.py",
       "name": "MainWindow.write_override",
-      "line": 1093,
-      "end_line": 1102
+      "line": 1183,
+      "end_line": 1192
     },
     {
       "id": "cps/app.py::PropertiesPanel",
       "kind": "class",
       "path": "cps/app.py",
       "name": "PropertiesPanel",
-      "line": 331,
-      "end_line": 434
+      "line": 334,
+      "end_line": 437
     },
     {
       "id": "cps/app.py::PropertiesPanel.__init__",
       "kind": "function",
       "path": "cps/app.py",
       "name": "PropertiesPanel.__init__",
-      "line": 334,
-      "end_line": 383
+      "line": 337,
+      "end_line": 386
     },
     {
       "id": "cps/app.py::PropertiesPanel.apply",
       "kind": "function",
       "path": "cps/app.py",
       "name": "PropertiesPanel.apply",
-      "line": 413,
-      "end_line": 434
+      "line": 416,
+      "end_line": 437
     },
     {
       "id": "cps/app.py::PropertiesPanel.set_makes",
       "kind": "function",
       "path": "cps/app.py",
       "name": "PropertiesPanel.set_makes",
-      "line": 385,
-      "end_line": 388
+      "line": 388,
+      "end_line": 391
     },
     {
       "id": "cps/app.py::PropertiesPanel.show_car",
       "kind": "function",
       "path": "cps/app.py",
       "name": "PropertiesPanel.show_car",
-      "line": 390,
-      "end_line": 411
+      "line": 393,
+      "end_line": 414
     },
     {
       "id": "cps/app.py::SettingsDialog",
       "kind": "class",
       "path": "cps/app.py",
       "name": "SettingsDialog",
-      "line": 64,
-      "end_line": 164
+      "line": 67,
+      "end_line": 167
     },
     {
       "id": "cps/app.py::SettingsDialog.__init__",
       "kind": "function",
       "path": "cps/app.py",
       "name": "SettingsDialog.__init__",
-      "line": 65,
-      "end_line": 147
+      "line": 68,
+      "end_line": 150
     },
     {
       "id": "cps/app.py::SettingsDialog._pick",
       "kind": "function",
       "path": "cps/app.py",
       "name": "SettingsDialog._pick",
-      "line": 149,
-      "end_line": 152
+      "line": 152,
+      "end_line": 155
     },
     {
       "id": "cps/app.py::SettingsDialog.result_settings",
       "kind": "function",
       "path": "cps/app.py",
       "name": "SettingsDialog.result_settings",
-      "line": 154,
-      "end_line": 164
+      "line": 157,
+      "end_line": 167
     },
     {
       "id": "cps/app.py::main",
       "kind": "function",
       "path": "cps/app.py",
       "name": "main",
-      "line": 1539,
-      "end_line": 1551
+      "line": 1654,
+      "end_line": 1666
     },
     {
       "id": "cps/assets.py",
       "kind": "file",
       "path": "cps/assets.py",
-      "sha256": "b97b7dafec50961e7dbdd1aa6a56cfbb2e4a24c4b1e6310bd43fdd6798ead275"
+      "sha256": "11a7d0d9bf0b0d62b79efe7a0bbe6a99dd1284498b39c0345de079e48a4a18b8"
     },
     {
       "id": "cps/assets.py::Reader",
@@ -1187,18 +1227,128 @@
       "end_line": 142
     },
     {
+      "id": "cps/command_scripts.py",
+      "kind": "file",
+      "path": "cps/command_scripts.py",
+      "sha256": "ca585d90fdbd6070a1ef16980a768be3c7e6c9b7c227fb352a5db73cb40a4919"
+    },
+    {
+      "id": "cps/command_scripts.py::CommandScriptRecorder",
+      "kind": "class",
+      "path": "cps/command_scripts.py",
+      "name": "CommandScriptRecorder",
+      "line": 83,
+      "end_line": 124
+    },
+    {
+      "id": "cps/command_scripts.py::CommandScriptRecorder.__init__",
+      "kind": "function",
+      "path": "cps/command_scripts.py",
+      "name": "CommandScriptRecorder.__init__",
+      "line": 84,
+      "end_line": 88
+    },
+    {
+      "id": "cps/command_scripts.py::CommandScriptRecorder.add",
+      "kind": "function",
+      "path": "cps/command_scripts.py",
+      "name": "CommandScriptRecorder.add",
+      "line": 100,
+      "end_line": 114
+    },
+    {
+      "id": "cps/command_scripts.py::CommandScriptRecorder.recording",
+      "kind": "function",
+      "path": "cps/command_scripts.py",
+      "name": "CommandScriptRecorder.recording",
+      "line": 91,
+      "end_line": 92
+    },
+    {
+      "id": "cps/command_scripts.py::CommandScriptRecorder.start",
+      "kind": "function",
+      "path": "cps/command_scripts.py",
+      "name": "CommandScriptRecorder.start",
+      "line": 94,
+      "end_line": 98
+    },
+    {
+      "id": "cps/command_scripts.py::CommandScriptRecorder.stop",
+      "kind": "function",
+      "path": "cps/command_scripts.py",
+      "name": "CommandScriptRecorder.stop",
+      "line": 116,
+      "end_line": 124
+    },
+    {
+      "id": "cps/command_scripts.py::CommandScriptStore",
+      "kind": "class",
+      "path": "cps/command_scripts.py",
+      "name": "CommandScriptStore",
+      "line": 14,
+      "end_line": 80
+    },
+    {
+      "id": "cps/command_scripts.py::CommandScriptStore.__init__",
+      "kind": "function",
+      "path": "cps/command_scripts.py",
+      "name": "CommandScriptStore.__init__",
+      "line": 15,
+      "end_line": 16
+    },
+    {
+      "id": "cps/command_scripts.py::CommandScriptStore._validate",
+      "kind": "function",
+      "path": "cps/command_scripts.py",
+      "name": "CommandScriptStore._validate",
+      "line": 60,
+      "end_line": 80
+    },
+    {
+      "id": "cps/command_scripts.py::CommandScriptStore.load",
+      "kind": "function",
+      "path": "cps/command_scripts.py",
+      "name": "CommandScriptStore.load",
+      "line": 50,
+      "end_line": 57
+    },
+    {
+      "id": "cps/command_scripts.py::CommandScriptStore.names",
+      "kind": "function",
+      "path": "cps/command_scripts.py",
+      "name": "CommandScriptStore.names",
+      "line": 23,
+      "end_line": 29
+    },
+    {
+      "id": "cps/command_scripts.py::CommandScriptStore.path",
+      "kind": "function",
+      "path": "cps/command_scripts.py",
+      "name": "CommandScriptStore.path",
+      "line": 18,
+      "end_line": 21
+    },
+    {
+      "id": "cps/command_scripts.py::CommandScriptStore.save",
+      "kind": "function",
+      "path": "cps/command_scripts.py",
+      "name": "CommandScriptStore.save",
+      "line": 31,
+      "end_line": 48
+    },
+    {
       "id": "cps/completion.py",
       "kind": "file",
       "path": "cps/completion.py",
-      "sha256": "04ec32b915178db391104729ce69d3624a1c243a014086ec2bd51a0b6e5ae51e"
+      "sha256": "bb56dd7f3a132b5821402fc5413c8b051c90974c52b18050cd5610ec102a2f6e"
     },
     {
       "id": "cps/completion.py::command_candidates",
       "kind": "function",
       "path": "cps/completion.py",
       "name": "command_candidates",
-      "line": 25,
-      "end_line": 32
+      "line": 31,
+      "end_line": 40
     },
     {
       "id": "cps/config.py",
@@ -1722,87 +1872,183 @@
       "id": "cps/filetools.py",
       "kind": "file",
       "path": "cps/filetools.py",
-      "sha256": "a51f6b505278fbff8134efbe44086a87c59661f6122f40757bae4689e8787aa8"
+      "sha256": "7551387f9ec7c87c7fe1e8b7e184995ea2b1a7cdd352630f074a03f7756a6328"
     },
     {
       "id": "cps/filetools.py::BinaryViewer",
       "kind": "class",
       "path": "cps/filetools.py",
       "name": "BinaryViewer",
-      "line": 15,
-      "end_line": 50
+      "line": 183,
+      "end_line": 218
     },
     {
       "id": "cps/filetools.py::BinaryViewer.__init__",
       "kind": "function",
       "path": "cps/filetools.py",
       "name": "BinaryViewer.__init__",
-      "line": 16,
-      "end_line": 50
+      "line": 184,
+      "end_line": 218
     },
     {
       "id": "cps/filetools.py::GameFilesManager",
       "kind": "class",
       "path": "cps/filetools.py",
       "name": "GameFilesManager",
-      "line": 53,
-      "end_line": 153
+      "line": 221,
+      "end_line": 321
     },
     {
       "id": "cps/filetools.py::GameFilesManager.__init__",
       "kind": "function",
       "path": "cps/filetools.py",
       "name": "GameFilesManager.__init__",
-      "line": 56,
-      "end_line": 105
+      "line": 224,
+      "end_line": 273
     },
     {
       "id": "cps/filetools.py::GameFilesManager._activate",
       "kind": "function",
       "path": "cps/filetools.py",
       "name": "GameFilesManager._activate",
-      "line": 123,
-      "end_line": 130
+      "line": 291,
+      "end_line": 298
     },
     {
       "id": "cps/filetools.py::GameFilesManager._open_entry",
       "kind": "function",
       "path": "cps/filetools.py",
       "name": "GameFilesManager._open_entry",
-      "line": 150,
-      "end_line": 153
+      "line": 318,
+      "end_line": 321
     },
     {
       "id": "cps/filetools.py::GameFilesManager._selected",
       "kind": "function",
       "path": "cps/filetools.py",
       "name": "GameFilesManager._selected",
-      "line": 118,
-      "end_line": 121
+      "line": 286,
+      "end_line": 289
     },
     {
       "id": "cps/filetools.py::GameFilesManager.choose_root",
       "kind": "function",
       "path": "cps/filetools.py",
       "name": "GameFilesManager.choose_root",
-      "line": 113,
-      "end_line": 116
+      "line": 281,
+      "end_line": 284
     },
     {
       "id": "cps/filetools.py::GameFilesManager.load_archive",
       "kind": "function",
       "path": "cps/filetools.py",
       "name": "GameFilesManager.load_archive",
-      "line": 132,
-      "end_line": 148
+      "line": 300,
+      "end_line": 316
     },
     {
       "id": "cps/filetools.py::GameFilesManager.set_root",
       "kind": "function",
       "path": "cps/filetools.py",
       "name": "GameFilesManager.set_root",
-      "line": 107,
-      "end_line": 111
+      "line": 275,
+      "end_line": 279
+    },
+    {
+      "id": "cps/filetools.py::SQLiteViewer",
+      "kind": "class",
+      "path": "cps/filetools.py",
+      "name": "SQLiteViewer",
+      "line": 19,
+      "end_line": 180
+    },
+    {
+      "id": "cps/filetools.py::SQLiteViewer.__init__",
+      "kind": "function",
+      "path": "cps/filetools.py",
+      "name": "SQLiteViewer.__init__",
+      "line": 24,
+      "end_line": 64
+    },
+    {
+      "id": "cps/filetools.py::SQLiteViewer._connect",
+      "kind": "function",
+      "path": "cps/filetools.py",
+      "name": "SQLiteViewer._connect",
+      "line": 66,
+      "end_line": 70
+    },
+    {
+      "id": "cps/filetools.py::SQLiteViewer._load_tables",
+      "kind": "function",
+      "path": "cps/filetools.py",
+      "name": "SQLiteViewer._load_tables",
+      "line": 72,
+      "end_line": 87
+    },
+    {
+      "id": "cps/filetools.py::SQLiteViewer._next_page",
+      "kind": "function",
+      "path": "cps/filetools.py",
+      "name": "SQLiteViewer._next_page",
+      "line": 106,
+      "end_line": 110
+    },
+    {
+      "id": "cps/filetools.py::SQLiteViewer._previous_page",
+      "kind": "function",
+      "path": "cps/filetools.py",
+      "name": "SQLiteViewer._previous_page",
+      "line": 101,
+      "end_line": 104
+    },
+    {
+      "id": "cps/filetools.py::SQLiteViewer._quoted",
+      "kind": "function",
+      "path": "cps/filetools.py",
+      "name": "SQLiteViewer._quoted",
+      "line": 90,
+      "end_line": 91
+    },
+    {
+      "id": "cps/filetools.py::SQLiteViewer._remove_temporary_file",
+      "kind": "function",
+      "path": "cps/filetools.py",
+      "name": "SQLiteViewer._remove_temporary_file",
+      "line": 174,
+      "end_line": 180
+    },
+    {
+      "id": "cps/filetools.py::SQLiteViewer._schedule_refresh",
+      "kind": "function",
+      "path": "cps/filetools.py",
+      "name": "SQLiteViewer._schedule_refresh",
+      "line": 97,
+      "end_line": 99
+    },
+    {
+      "id": "cps/filetools.py::SQLiteViewer._table_changed",
+      "kind": "function",
+      "path": "cps/filetools.py",
+      "name": "SQLiteViewer._table_changed",
+      "line": 93,
+      "end_line": 95
+    },
+    {
+      "id": "cps/filetools.py::SQLiteViewer.closeEvent",
+      "kind": "function",
+      "path": "cps/filetools.py",
+      "name": "SQLiteViewer.closeEvent",
+      "line": 168,
+      "end_line": 171
+    },
+    {
+      "id": "cps/filetools.py::SQLiteViewer.refresh",
+      "kind": "function",
+      "path": "cps/filetools.py",
+      "name": "SQLiteViewer.refresh",
+      "line": 112,
+      "end_line": 166
     },
     {
       "id": "cps/gamedata.py",
@@ -3944,439 +4190,479 @@
       "id": "cps/wrapper.py",
       "kind": "file",
       "path": "cps/wrapper.py",
-      "sha256": "f2396dfc0912935b8672a60bb768da7538097ae3b1c5d8be8d61fd294c619506"
+      "sha256": "548e11030023f56304ca800c1ed891450db73519ca4fde3350926659f900c5e9"
     },
     {
       "id": "cps/wrapper.py::GameContainer",
       "kind": "class",
       "path": "cps/wrapper.py",
       "name": "GameContainer",
-      "line": 33,
-      "end_line": 83
+      "line": 34,
+      "end_line": 84
     },
     {
       "id": "cps/wrapper.py::GameContainer.__init__",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "GameContainer.__init__",
-      "line": 36,
-      "end_line": 43
+      "line": 37,
+      "end_line": 44
     },
     {
       "id": "cps/wrapper.py::GameContainer.embed",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "GameContainer.embed",
-      "line": 45,
-      "end_line": 54
+      "line": 46,
+      "end_line": 55
     },
     {
       "id": "cps/wrapper.py::GameContainer.fit",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "GameContainer.fit",
-      "line": 75,
-      "end_line": 79
+      "line": 76,
+      "end_line": 80
     },
     {
       "id": "cps/wrapper.py::GameContainer.focusInEvent",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "GameContainer.focusInEvent",
-      "line": 61,
-      "end_line": 63
+      "line": 62,
+      "end_line": 64
     },
     {
       "id": "cps/wrapper.py::GameContainer.focus_game",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "GameContainer.focus_game",
-      "line": 56,
-      "end_line": 59
+      "line": 57,
+      "end_line": 60
     },
     {
       "id": "cps/wrapper.py::GameContainer.mousePressEvent",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "GameContainer.mousePressEvent",
-      "line": 65,
-      "end_line": 67
+      "line": 66,
+      "end_line": 68
     },
     {
       "id": "cps/wrapper.py::GameContainer.release",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "GameContainer.release",
-      "line": 69,
-      "end_line": 73
+      "line": 70,
+      "end_line": 74
     },
     {
       "id": "cps/wrapper.py::GameContainer.resizeEvent",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "GameContainer.resizeEvent",
-      "line": 81,
-      "end_line": 83
+      "line": 82,
+      "end_line": 84
     },
     {
       "id": "cps/wrapper.py::Poller",
       "kind": "class",
       "path": "cps/wrapper.py",
       "name": "Poller",
-      "line": 86,
-      "end_line": 115
+      "line": 87,
+      "end_line": 116
     },
     {
       "id": "cps/wrapper.py::Poller.__init__",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "Poller.__init__",
-      "line": 91,
-      "end_line": 96
+      "line": 92,
+      "end_line": 97
     },
     {
       "id": "cps/wrapper.py::Poller.run",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "Poller.run",
-      "line": 98,
-      "end_line": 115
+      "line": 99,
+      "end_line": 116
     },
     {
       "id": "cps/wrapper.py::WrapperTab",
       "kind": "class",
       "path": "cps/wrapper.py",
       "name": "WrapperTab",
-      "line": 118,
-      "end_line": 988
+      "line": 119,
+      "end_line": 1124
     },
     {
       "id": "cps/wrapper.py::WrapperTab.__init__",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.__init__",
-      "line": 124,
-      "end_line": 246
+      "line": 125,
+      "end_line": 255
+    },
+    {
+      "id": "cps/wrapper.py::WrapperTab._advance_command_script",
+      "kind": "function",
+      "path": "cps/wrapper.py",
+      "name": "WrapperTab._advance_command_script",
+      "line": 960,
+      "end_line": 976
     },
     {
       "id": "cps/wrapper.py::WrapperTab._apply_volume",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab._apply_volume",
-      "line": 418,
-      "end_line": 437
+      "line": 427,
+      "end_line": 446
     },
     {
       "id": "cps/wrapper.py::WrapperTab._cancel_navigation",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab._cancel_navigation",
-      "line": 439,
-      "end_line": 442
+      "line": 448,
+      "end_line": 451
     },
     {
       "id": "cps/wrapper.py::WrapperTab._check_swap_timeout",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab._check_swap_timeout",
-      "line": 920,
-      "end_line": 929
+      "line": 1048,
+      "end_line": 1057
     },
     {
       "id": "cps/wrapper.py::WrapperTab._clear_swap",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab._clear_swap",
-      "line": 913,
-      "end_line": 918
+      "line": 1041,
+      "end_line": 1046
+    },
+    {
+      "id": "cps/wrapper.py::WrapperTab._command_script_command",
+      "kind": "function",
+      "path": "cps/wrapper.py",
+      "name": "WrapperTab._command_script_command",
+      "line": 923,
+      "end_line": 958
     },
     {
       "id": "cps/wrapper.py::WrapperTab._console_command",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab._console_command",
-      "line": 598,
-      "end_line": 762
+      "line": 607,
+      "end_line": 771
     },
     {
       "id": "cps/wrapper.py::WrapperTab._critical_exit",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab._critical_exit",
-      "line": 838,
-      "end_line": 845
+      "line": 847,
+      "end_line": 854
     },
     {
       "id": "cps/wrapper.py::WrapperTab._edit_teleport_place",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab._edit_teleport_place",
-      "line": 764,
-      "end_line": 777
+      "line": 773,
+      "end_line": 786
+    },
+    {
+      "id": "cps/wrapper.py::WrapperTab._finish_command_playback",
+      "kind": "function",
+      "path": "cps/wrapper.py",
+      "name": "WrapperTab._finish_command_playback",
+      "line": 978,
+      "end_line": 982
     },
     {
       "id": "cps/wrapper.py::WrapperTab._input_window_ready",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab._input_window_ready",
-      "line": 390,
-      "end_line": 405
+      "line": 399,
+      "end_line": 414
     },
     {
       "id": "cps/wrapper.py::WrapperTab._log_line",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab._log_line",
-      "line": 550,
-      "end_line": 571
+      "line": 559,
+      "end_line": 580
     },
     {
       "id": "cps/wrapper.py::WrapperTab._pump_logs",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab._pump_logs",
-      "line": 530,
-      "end_line": 548
+      "line": 539,
+      "end_line": 557
     },
     {
       "id": "cps/wrapper.py::WrapperTab._report_running",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab._report_running",
-      "line": 367,
-      "end_line": 382
+      "line": 376,
+      "end_line": 391
     },
     {
       "id": "cps/wrapper.py::WrapperTab._restart_swap_car",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab._restart_swap_car",
-      "line": 951,
-      "end_line": 965
+      "line": 1079,
+      "end_line": 1093
     },
     {
       "id": "cps/wrapper.py::WrapperTab._set_game_detached",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab._set_game_detached",
-      "line": 326,
-      "end_line": 331
+      "line": 335,
+      "end_line": 340
     },
     {
       "id": "cps/wrapper.py::WrapperTab._show_placeholder",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab._show_placeholder",
-      "line": 249,
-      "end_line": 252
+      "line": 258,
+      "end_line": 261
+    },
+    {
+      "id": "cps/wrapper.py::WrapperTab._stop_command_scripts",
+      "kind": "function",
+      "path": "cps/wrapper.py",
+      "name": "WrapperTab._stop_command_scripts",
+      "line": 984,
+      "end_line": 997
     },
     {
       "id": "cps/wrapper.py::WrapperTab._track_reload",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab._track_reload",
-      "line": 902,
-      "end_line": 911
+      "line": 1030,
+      "end_line": 1039
+    },
+    {
+      "id": "cps/wrapper.py::WrapperTab._utility_command",
+      "kind": "function",
+      "path": "cps/wrapper.py",
+      "name": "WrapperTab._utility_command",
+      "line": 897,
+      "end_line": 921
     },
     {
       "id": "cps/wrapper.py::WrapperTab.add_current_place",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.add_current_place",
-      "line": 782,
-      "end_line": 792
+      "line": 791,
+      "end_line": 801
     },
     {
       "id": "cps/wrapper.py::WrapperTab.delete_place",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.delete_place",
-      "line": 794,
-      "end_line": 797
+      "line": 803,
+      "end_line": 806
     },
     {
       "id": "cps/wrapper.py::WrapperTab.export_map_capture",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.export_map_capture",
-      "line": 819,
-      "end_line": 836
+      "line": 828,
+      "end_line": 845
     },
     {
       "id": "cps/wrapper.py::WrapperTab.navigate",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.navigate",
-      "line": 444,
-      "end_line": 472
+      "line": 453,
+      "end_line": 481
     },
     {
       "id": "cps/wrapper.py::WrapperTab.on_command",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.on_command",
-      "line": 847,
-      "end_line": 869
+      "line": 856,
+      "end_line": 895
     },
     {
       "id": "cps/wrapper.py::WrapperTab.on_native_data",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.on_native_data",
-      "line": 474,
-      "end_line": 495
+      "line": 483,
+      "end_line": 504
     },
     {
       "id": "cps/wrapper.py::WrapperTab.on_swap_status",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.on_swap_status",
-      "line": 931,
-      "end_line": 943
+      "line": 1059,
+      "end_line": 1071
     },
     {
       "id": "cps/wrapper.py::WrapperTab.on_telemetry",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.on_telemetry",
-      "line": 509,
-      "end_line": 528
+      "line": 518,
+      "end_line": 537
     },
     {
       "id": "cps/wrapper.py::WrapperTab.recover_swap",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.recover_swap",
-      "line": 945,
-      "end_line": 949
+      "line": 1073,
+      "end_line": 1077
     },
     {
       "id": "cps/wrapper.py::WrapperTab.refresh_optional_mods",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.refresh_optional_mods",
-      "line": 384,
-      "end_line": 388
+      "line": 393,
+      "end_line": 397
     },
     {
       "id": "cps/wrapper.py::WrapperTab.restart",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.restart",
-      "line": 967,
-      "end_line": 973
+      "line": 1095,
+      "end_line": 1101
     },
     {
       "id": "cps/wrapper.py::WrapperTab.send",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.send",
-      "line": 871,
-      "end_line": 900
+      "line": 999,
+      "end_line": 1028
     },
     {
       "id": "cps/wrapper.py::WrapperTab.set_car",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.set_car",
-      "line": 254,
-      "end_line": 257
+      "line": 263,
+      "end_line": 266
     },
     {
       "id": "cps/wrapper.py::WrapperTab.set_console_detached",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.set_console_detached",
-      "line": 573,
-      "end_line": 596
+      "line": 582,
+      "end_line": 605
     },
     {
       "id": "cps/wrapper.py::WrapperTab.set_volume",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.set_volume",
-      "line": 407,
-      "end_line": 416
+      "line": 416,
+      "end_line": 425
     },
     {
       "id": "cps/wrapper.py::WrapperTab.show_places",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.show_places",
-      "line": 799,
-      "end_line": 806
+      "line": 808,
+      "end_line": 815
     },
     {
       "id": "cps/wrapper.py::WrapperTab.show_scripts",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.show_scripts",
-      "line": 808,
-      "end_line": 814
+      "line": 817,
+      "end_line": 823
     },
     {
       "id": "cps/wrapper.py::WrapperTab.shutdown",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.shutdown",
-      "line": 975,
-      "end_line": 988
+      "line": 1103,
+      "end_line": 1124
     },
     {
       "id": "cps/wrapper.py::WrapperTab.start",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.start",
-      "line": 259,
-      "end_line": 292
+      "line": 268,
+      "end_line": 301
     },
     {
       "id": "cps/wrapper.py::WrapperTab.start_map_capture",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.start_map_capture",
-      "line": 816,
-      "end_line": 817
+      "line": 825,
+      "end_line": 826
     },
     {
       "id": "cps/wrapper.py::WrapperTab.stop",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.stop",
-      "line": 294,
-      "end_line": 306
+      "line": 303,
+      "end_line": 315
     },
     {
       "id": "cps/wrapper.py::WrapperTab.take_screenshot",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.take_screenshot",
-      "line": 497,
-      "end_line": 507
+      "line": 506,
+      "end_line": 516
     },
     {
       "id": "cps/wrapper.py::WrapperTab.teleport_to",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.teleport_to",
-      "line": 779,
-      "end_line": 780
+      "line": 788,
+      "end_line": 789
     },
     {
       "id": "cps/wrapper.py::WrapperTab.tick",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.tick",
-      "line": 334,
-      "end_line": 365
+      "line": 343,
+      "end_line": 374
     },
     {
       "id": "cps/wrapper.py::WrapperTab.toggle_detach",
       "kind": "function",
       "path": "cps/wrapper.py",
       "name": "WrapperTab.toggle_detach",
-      "line": 308,
-      "end_line": 324
+      "line": 317,
+      "end_line": 333
     },
     {
       "id": "cps/zipnative.py",
@@ -4418,13 +4704,13 @@
       "id": "native/CarPackStudio.cpp",
       "kind": "file",
       "path": "native/CarPackStudio.cpp",
-      "sha256": "893381b738db0c1f18759061d3f3e4ae50c166e27f5b04da53dbcb2ba543883a"
+      "sha256": "df25324e3559fd4f0af6f6251925f54fde03eedb6c85b1f04ead5712e584ec74"
     },
     {
       "id": "native/CarPackStudio.rc",
       "kind": "file",
       "path": "native/CarPackStudio.rc",
-      "sha256": "b3905641503dfbfd06f19813845ea100e5b9b5f45a7fc0396009f59280dc50d8"
+      "sha256": "4d815b77a7c03fc9dbdbb519af9e82102ed37df25cfd0d1f2bcf2ee1b905f7a2"
     },
     {
       "id": "native/build.bat",
@@ -4504,7 +4790,7 @@
       "id": "resources/how-to.html",
       "kind": "file",
       "path": "resources/how-to.html",
-      "sha256": "bc6f72c52ddcc68dafc5089cff38cb126531fe8f66933caa3e62405326e9cac7"
+      "sha256": "04b88ebc9ded848bb8917e836724841caf05c7f96b7eabc8f3d711d02426526d"
     },
     {
       "id": "resources/screenshot.svg",
@@ -4528,7 +4814,7 @@
       "id": "tests/test_alpha_ui.py",
       "kind": "file",
       "path": "tests/test_alpha_ui.py",
-      "sha256": "ebd02f41c46ac099822aa6f2ebcd6d01e9f1610d5f4bb568c2a81fcb65e5a211"
+      "sha256": "bf9501979015800a7690ecc0557c434d6635f909dc8779102c06e5d02de1348f"
     },
     {
       "id": "tests/test_alpha_ui.py::AlphaUiTests",
@@ -4893,6 +5179,36 @@
       "name": "CarWorkflowTests.test_zip_import_round_trip_and_clone_behavior",
       "line": 265,
       "end_line": 302
+    },
+    {
+      "id": "tests/test_command_scripts.py",
+      "kind": "file",
+      "path": "tests/test_command_scripts.py",
+      "sha256": "9a87d225f9b9fc288e7b37de85b9ff6c42d3b974069e69a403d7150aa2335a9a"
+    },
+    {
+      "id": "tests/test_command_scripts.py::CommandScriptTests",
+      "kind": "class",
+      "path": "tests/test_command_scripts.py",
+      "name": "CommandScriptTests",
+      "line": 12,
+      "end_line": 59
+    },
+    {
+      "id": "tests/test_command_scripts.py::CommandScriptTests.test_console_records_and_replays_utility_commands",
+      "kind": "function",
+      "path": "tests/test_command_scripts.py",
+      "name": "CommandScriptTests.test_console_records_and_replays_utility_commands",
+      "line": 29,
+      "end_line": 59
+    },
+    {
+      "id": "tests/test_command_scripts.py::CommandScriptTests.test_round_trip_and_validation",
+      "kind": "function",
+      "path": "tests/test_command_scripts.py",
+      "name": "CommandScriptTests.test_round_trip_and_validation",
+      "line": 13,
+      "end_line": 27
     },
     {
       "id": "tests/test_completion.py",
@@ -5684,351 +6000,413 @@
       "id": "tests/test_runtime_gui.py",
       "kind": "file",
       "path": "tests/test_runtime_gui.py",
-      "sha256": "1d0485d756d992d93bcbf22c608dac6c5eb16d1fd71453732dc604c7770a706e"
+      "sha256": "d24e18996399e07bf6ef5262b3bb3714f32d08f7261af212edf4b584efeef969"
     },
     {
       "id": "tests/test_runtime_gui.py::ModAndCaptureTests",
       "kind": "class",
       "path": "tests/test_runtime_gui.py",
       "name": "ModAndCaptureTests",
-      "line": 295,
-      "end_line": 373
+      "line": 403,
+      "end_line": 481
     },
     {
       "id": "tests/test_runtime_gui.py::ModAndCaptureTests.setUpClass",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "ModAndCaptureTests.setUpClass",
-      "line": 297,
-      "end_line": 298
+      "line": 405,
+      "end_line": 406
     },
     {
       "id": "tests/test_runtime_gui.py::ModAndCaptureTests.test_mod_inventory_invalid_session_reports_failure",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "ModAndCaptureTests.test_mod_inventory_invalid_session_reports_failure",
-      "line": 358,
-      "end_line": 362
+      "line": 466,
+      "end_line": 470
     },
     {
       "id": "tests/test_runtime_gui.py::ModAndCaptureTests.test_mod_inventory_versions_aliases_configs_and_extraoptions",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "ModAndCaptureTests.test_mod_inventory_versions_aliases_configs_and_extraoptions",
-      "line": 300,
-      "end_line": 331
+      "line": 408,
+      "end_line": 439
     },
     {
       "id": "tests/test_runtime_gui.py::ModAndCaptureTests.test_original_icon_has_vector_source_and_all_packaged_sizes",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "ModAndCaptureTests.test_original_icon_has_vector_source_and_all_packaged_sizes",
-      "line": 364,
-      "end_line": 373
+      "line": 472,
+      "end_line": 481
     },
     {
       "id": "tests/test_runtime_gui.py::ModAndCaptureTests.test_screenshot_retains_exact_pixels_unique_names_and_appdata",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "ModAndCaptureTests.test_screenshot_retains_exact_pixels_unique_names_and_appdata",
-      "line": 333,
-      "end_line": 347
+      "line": 441,
+      "end_line": 455
     },
     {
       "id": "tests/test_runtime_gui.py::ModAndCaptureTests.test_stopped_screenshot_and_stale_pipe_session_are_rejected",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "ModAndCaptureTests.test_stopped_screenshot_and_stale_pipe_session_are_rejected",
-      "line": 349,
-      "end_line": 356
+      "line": 457,
+      "end_line": 464
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests",
       "kind": "class",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests",
-      "line": 75,
-      "end_line": 292
+      "line": 78,
+      "end_line": 400
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.panel",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.panel",
-      "line": 106,
-      "end_line": 109
+      "line": 109,
+      "end_line": 112
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.setUp",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.setUp",
-      "line": 80,
-      "end_line": 95
+      "line": 83,
+      "end_line": 98
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.setUpClass",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.setUpClass",
-      "line": 77,
-      "end_line": 78
+      "line": 80,
+      "end_line": 81
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.snapshot",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.snapshot",
-      "line": 111,
-      "end_line": 112
+      "line": 114,
+      "end_line": 115
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.tearDown",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.tearDown",
-      "line": 97,
-      "end_line": 104
+      "line": 100,
+      "end_line": 107
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_car_context_actions_gate_runtime_and_route_ids",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.test_car_context_actions_gate_runtime_and_route_ids",
-      "line": 114,
-      "end_line": 128
+      "line": 117,
+      "end_line": 131
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_cross_map_sequence_waits_for_confirmed_arrival_once",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.test_cross_map_sequence_waits_for_confirmed_arrival_once",
-      "line": 155,
-      "end_line": 168
+      "line": 158,
+      "end_line": 171
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_current_map_action_skips_transition",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.test_current_map_action_skips_transition",
-      "line": 170,
-      "end_line": 174
+      "line": 173,
+      "end_line": 177
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_custom_map_id_is_preserved_without_claiming_native_support",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.test_custom_map_id_is_preserved_without_claiming_native_support",
-      "line": 148,
-      "end_line": 153
+      "line": 151,
+      "end_line": 156
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_event_ids_grouped_by_map_and_start_uses_map_sequence",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.test_event_ids_grouped_by_map_and_start_uses_map_sequence",
-      "line": 208,
-      "end_line": 221
+      "line": 211,
+      "end_line": 224
+    },
+    {
+      "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_game_files_opens_slt_in_sqlite_viewer",
+      "kind": "function",
+      "path": "tests/test_runtime_gui.py",
+      "name": "RuntimeGuiTests.test_game_files_opens_slt_in_sqlite_viewer",
+      "line": 379,
+      "end_line": 400
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_main_window_has_all_tabs_and_permanent_version",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.test_main_window_has_all_tabs_and_permanent_version",
-      "line": 279,
-      "end_line": 292
+      "line": 282,
+      "end_line": 295
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_map_failures_never_send_followup",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.test_map_failures_never_send_followup",
-      "line": 176,
-      "end_line": 183
+      "line": 179,
+      "end_line": 186
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_map_menu_has_builtins_custom_points_and_no_speedtraps",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.test_map_menu_has_builtins_custom_points_and_no_speedtraps",
-      "line": 130,
-      "end_line": 146
+      "line": 133,
+      "end_line": 149
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_native_rejection_and_wrong_process_snapshot_are_safe",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.test_native_rejection_and_wrong_process_snapshot_are_safe",
-      "line": 185,
-      "end_line": 192
+      "line": 188,
+      "end_line": 195
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_navigation_timeout_stop_and_conflicting_console_command",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.test_navigation_timeout_stop_and_conflicting_console_command",
-      "line": 194,
-      "end_line": 206
+      "line": 197,
+      "end_line": 209
+    },
+    {
+      "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_old_saved_layout_does_not_override_new_default",
+      "kind": "function",
+      "path": "tests/test_runtime_gui.py",
+      "name": "RuntimeGuiTests.test_old_saved_layout_does_not_override_new_default",
+      "line": 355,
+      "end_line": 377
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_screenshot_default_overlay_and_toolbar_position",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.test_screenshot_default_overlay_and_toolbar_position",
-      "line": 263,
-      "end_line": 277
+      "line": 266,
+      "end_line": 280
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_spawned_context_delete_swap_ai_controls_and_failure_gating",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.test_spawned_context_delete_swap_ai_controls_and_failure_gating",
-      "line": 239,
-      "end_line": 261
+      "line": 242,
+      "end_line": 264
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_spawned_refresh_tracks_console_changes_selection_and_deletion",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeGuiTests.test_spawned_refresh_tracks_console_changes_selection_and_deletion",
-      "line": 223,
-      "end_line": 237
+      "line": 226,
+      "end_line": 240
+    },
+    {
+      "id": "tests/test_runtime_gui.py::RuntimeGuiTests.test_window_layout_is_restored_and_reset",
+      "kind": "function",
+      "path": "tests/test_runtime_gui.py",
+      "name": "RuntimeGuiTests.test_window_layout_is_restored_and_reset",
+      "line": 297,
+      "end_line": 353
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeStateTests",
       "kind": "class",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeStateTests",
-      "line": 41,
-      "end_line": 72
+      "line": 44,
+      "end_line": 75
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeStateTests.test_invalid_native_status_is_not_an_empty_success",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeStateTests.test_invalid_native_status_is_not_an_empty_success",
-      "line": 49,
-      "end_line": 60
+      "line": 52,
+      "end_line": 63
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeStateTests.test_map_status_with_spaces_and_completion",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeStateTests.test_map_status_with_spaces_and_completion",
-      "line": 42,
-      "end_line": 47
+      "line": 45,
+      "end_line": 50
     },
     {
       "id": "tests/test_runtime_gui.py::RuntimeStateTests.test_spawned_native_types_states_and_possession",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "RuntimeStateTests.test_spawned_native_types_states_and_possession",
-      "line": 62,
-      "end_line": 72
+      "line": 65,
+      "end_line": 75
     },
     {
       "id": "tests/test_runtime_gui.py::UpdateTests",
       "kind": "class",
       "path": "tests/test_runtime_gui.py",
       "name": "UpdateTests",
-      "line": 376,
-      "end_line": 474
+      "line": 484,
+      "end_line": 582
     },
     {
       "id": "tests/test_runtime_gui.py::UpdateTests.setUpClass",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "UpdateTests.setUpClass",
-      "line": 378,
-      "end_line": 379
+      "line": 486,
+      "end_line": 487
     },
     {
       "id": "tests/test_runtime_gui.py::UpdateTests.test_async_check_timeout_single_request_and_shutdown",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "UpdateTests.test_async_check_timeout_single_request_and_shutdown",
-      "line": 403,
-      "end_line": 415
+      "line": 511,
+      "end_line": 523
     },
     {
       "id": "tests/test_runtime_gui.py::UpdateTests.test_network_failure_and_no_release_are_reported",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "UpdateTests.test_network_failure_and_no_release_are_reported",
-      "line": 417,
-      "end_line": 430
+      "line": 525,
+      "end_line": 538
     },
     {
       "id": "tests/test_runtime_gui.py::UpdateTests.test_new_release_popup_contains_repo_link",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "UpdateTests.test_new_release_popup_contains_repo_link",
-      "line": 455,
-      "end_line": 474
+      "line": 563,
+      "end_line": 582
     },
     {
       "id": "tests/test_runtime_gui.py::UpdateTests.test_new_release_popup_contains_repo_link.display",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "UpdateTests.test_new_release_popup_contains_repo_link.display",
-      "line": 466,
-      "end_line": 468
+      "line": 574,
+      "end_line": 576
     },
     {
       "id": "tests/test_runtime_gui.py::UpdateTests.test_no_new_version_is_silent_for_automatic_checks",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "UpdateTests.test_no_new_version_is_silent_for_automatic_checks",
-      "line": 432,
-      "end_line": 442
+      "line": 540,
+      "end_line": 550
     },
     {
       "id": "tests/test_runtime_gui.py::UpdateTests.test_semantic_version_comparison_not_lexical",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "UpdateTests.test_semantic_version_comparison_not_lexical",
-      "line": 381,
-      "end_line": 391
+      "line": 489,
+      "end_line": 499
     },
     {
       "id": "tests/test_runtime_gui.py::UpdateTests.test_startup_network_contact_is_opt_in",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "UpdateTests.test_startup_network_contact_is_opt_in",
-      "line": 444,
-      "end_line": 453
+      "line": 552,
+      "end_line": 561
     },
     {
       "id": "tests/test_runtime_gui.py::UpdateTests.test_update_setting_opt_in_and_explicit_button",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "UpdateTests.test_update_setting_opt_in_and_explicit_button",
-      "line": 393,
-      "end_line": 401
+      "line": 501,
+      "end_line": 509
     },
     {
       "id": "tests/test_runtime_gui.py::car",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "car",
-      "line": 36,
-      "end_line": 38
+      "line": 39,
+      "end_line": 41
     },
     {
       "id": "tests/test_runtime_gui.py::spawned",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "spawned",
-      "line": 31,
-      "end_line": 33
+      "line": 34,
+      "end_line": 36
     },
     {
       "id": "tests/test_runtime_gui.py::track",
       "kind": "function",
       "path": "tests/test_runtime_gui.py",
       "name": "track",
-      "line": 26,
-      "end_line": 28
+      "line": 29,
+      "end_line": 31
+    },
+    {
+      "id": "tests/test_sqlite_viewer.py",
+      "kind": "file",
+      "path": "tests/test_sqlite_viewer.py",
+      "sha256": "0341bde5317c9fcdb02c4a9c4f5d4798c588d5b1e84cbf7a436524dbeac1f33c"
+    },
+    {
+      "id": "tests/test_sqlite_viewer.py::SQLiteViewerTests",
+      "kind": "class",
+      "path": "tests/test_sqlite_viewer.py",
+      "name": "SQLiteViewerTests",
+      "line": 12,
+      "end_line": 56
+    },
+    {
+      "id": "tests/test_sqlite_viewer.py::SQLiteViewerTests.setUpClass",
+      "kind": "function",
+      "path": "tests/test_sqlite_viewer.py",
+      "name": "SQLiteViewerTests.setUpClass",
+      "line": 14,
+      "end_line": 15
+    },
+    {
+      "id": "tests/test_sqlite_viewer.py::SQLiteViewerTests.test_invalid_database_reports_open_error",
+      "kind": "function",
+      "path": "tests/test_sqlite_viewer.py",
+      "name": "SQLiteViewerTests.test_invalid_database_reports_open_error",
+      "line": 46,
+      "end_line": 56
+    },
+    {
+      "id": "tests/test_sqlite_viewer.py::SQLiteViewerTests.test_paged_filtered_read_only_database",
+      "kind": "function",
+      "path": "tests/test_sqlite_viewer.py",
+      "name": "SQLiteViewerTests.test_paged_filtered_read_only_database",
+      "line": 17,
+      "end_line": 44
     },
     {
       "id": "tests/test_testbench.py",
@@ -6506,7 +6884,7 @@
       "id": "version_info.txt",
       "kind": "file",
       "path": "version_info.txt",
-      "sha256": "5326b6eef96c61f68745b00fe09c7f0768abf487fd3fd5fb770c2cb4f7f63902"
+      "sha256": "57193e904c378f92128972fd19fda6b63330446e1af1929d7a8d1d53a0650c45"
     }
   ],
   "edges": [
@@ -6697,6 +7075,11 @@
     },
     {
       "from": "cps/app.py::MainWindow",
+      "to": "cps/app.py::MainWindow._apply_default_dock_layout",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/app.py::MainWindow",
       "to": "cps/app.py::MainWindow._asset_widget",
       "kind": "contains"
     },
@@ -6728,6 +7111,11 @@
     {
       "from": "cps/app.py::MainWindow",
       "to": "cps/app.py::MainWindow._hex",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/app.py::MainWindow",
+      "to": "cps/app.py::MainWindow._layout_path",
       "kind": "contains"
     },
     {
@@ -6787,7 +7175,22 @@
     },
     {
       "from": "cps/app.py::MainWindow",
+      "to": "cps/app.py::MainWindow._reset_window_layout",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/app.py::MainWindow",
+      "to": "cps/app.py::MainWindow._restore_window_layout",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/app.py::MainWindow",
       "to": "cps/app.py::MainWindow._save_text",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/app.py::MainWindow",
+      "to": "cps/app.py::MainWindow._save_window_layout",
       "kind": "contains"
     },
     {
@@ -7306,9 +7709,89 @@
       "kind": "contains"
     },
     {
+      "from": "cps/command_scripts.py",
+      "to": "cps/command_scripts.py::CommandScriptRecorder",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/command_scripts.py",
+      "to": "cps/command_scripts.py::CommandScriptStore",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/command_scripts.py::CommandScriptRecorder",
+      "to": "cps/command_scripts.py::CommandScriptRecorder.__init__",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/command_scripts.py::CommandScriptRecorder",
+      "to": "cps/command_scripts.py::CommandScriptRecorder.add",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/command_scripts.py::CommandScriptRecorder",
+      "to": "cps/command_scripts.py::CommandScriptRecorder.recording",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/command_scripts.py::CommandScriptRecorder",
+      "to": "cps/command_scripts.py::CommandScriptRecorder.start",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/command_scripts.py::CommandScriptRecorder",
+      "to": "cps/command_scripts.py::CommandScriptRecorder.stop",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/command_scripts.py::CommandScriptStore",
+      "to": "cps/command_scripts.py::CommandScriptStore.__init__",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/command_scripts.py::CommandScriptStore",
+      "to": "cps/command_scripts.py::CommandScriptStore._validate",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/command_scripts.py::CommandScriptStore",
+      "to": "cps/command_scripts.py::CommandScriptStore.load",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/command_scripts.py::CommandScriptStore",
+      "to": "cps/command_scripts.py::CommandScriptStore.names",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/command_scripts.py::CommandScriptStore",
+      "to": "cps/command_scripts.py::CommandScriptStore.path",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/command_scripts.py::CommandScriptStore",
+      "to": "cps/command_scripts.py::CommandScriptStore.save",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/completion.py",
+      "to": "cps/__init__.py",
+      "kind": "imports"
+    },
+    {
+      "from": "cps/completion.py",
+      "to": "cps/command_scripts.py",
+      "kind": "imports"
+    },
+    {
       "from": "cps/completion.py",
       "to": "cps/completion.py::command_candidates",
       "kind": "contains"
+    },
+    {
+      "from": "cps/completion.py",
+      "to": "cps/config.py",
+      "kind": "imports"
     },
     {
       "from": "cps/completion.py",
@@ -7676,6 +8159,11 @@
       "kind": "contains"
     },
     {
+      "from": "cps/filetools.py",
+      "to": "cps/filetools.py::SQLiteViewer",
+      "kind": "contains"
+    },
+    {
       "from": "cps/filetools.py::BinaryViewer",
       "to": "cps/filetools.py::BinaryViewer.__init__",
       "kind": "contains"
@@ -7713,6 +8201,61 @@
     {
       "from": "cps/filetools.py::GameFilesManager",
       "to": "cps/filetools.py::GameFilesManager.set_root",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/filetools.py::SQLiteViewer",
+      "to": "cps/filetools.py::SQLiteViewer.__init__",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/filetools.py::SQLiteViewer",
+      "to": "cps/filetools.py::SQLiteViewer._connect",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/filetools.py::SQLiteViewer",
+      "to": "cps/filetools.py::SQLiteViewer._load_tables",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/filetools.py::SQLiteViewer",
+      "to": "cps/filetools.py::SQLiteViewer._next_page",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/filetools.py::SQLiteViewer",
+      "to": "cps/filetools.py::SQLiteViewer._previous_page",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/filetools.py::SQLiteViewer",
+      "to": "cps/filetools.py::SQLiteViewer._quoted",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/filetools.py::SQLiteViewer",
+      "to": "cps/filetools.py::SQLiteViewer._remove_temporary_file",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/filetools.py::SQLiteViewer",
+      "to": "cps/filetools.py::SQLiteViewer._schedule_refresh",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/filetools.py::SQLiteViewer",
+      "to": "cps/filetools.py::SQLiteViewer._table_changed",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/filetools.py::SQLiteViewer",
+      "to": "cps/filetools.py::SQLiteViewer.closeEvent",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/filetools.py::SQLiteViewer",
+      "to": "cps/filetools.py::SQLiteViewer.refresh",
       "kind": "contains"
     },
     {
@@ -9217,6 +9760,11 @@
     },
     {
       "from": "cps/wrapper.py",
+      "to": "cps/command_scripts.py",
+      "kind": "imports"
+    },
+    {
+      "from": "cps/wrapper.py",
       "to": "cps/config.py",
       "kind": "imports"
     },
@@ -9347,6 +9895,11 @@
     },
     {
       "from": "cps/wrapper.py::WrapperTab",
+      "to": "cps/wrapper.py::WrapperTab._advance_command_script",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/wrapper.py::WrapperTab",
       "to": "cps/wrapper.py::WrapperTab._apply_volume",
       "kind": "contains"
     },
@@ -9367,6 +9920,11 @@
     },
     {
       "from": "cps/wrapper.py::WrapperTab",
+      "to": "cps/wrapper.py::WrapperTab._command_script_command",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/wrapper.py::WrapperTab",
       "to": "cps/wrapper.py::WrapperTab._console_command",
       "kind": "contains"
     },
@@ -9378,6 +9936,11 @@
     {
       "from": "cps/wrapper.py::WrapperTab",
       "to": "cps/wrapper.py::WrapperTab._edit_teleport_place",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/wrapper.py::WrapperTab",
+      "to": "cps/wrapper.py::WrapperTab._finish_command_playback",
       "kind": "contains"
     },
     {
@@ -9417,7 +9980,17 @@
     },
     {
       "from": "cps/wrapper.py::WrapperTab",
+      "to": "cps/wrapper.py::WrapperTab._stop_command_scripts",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/wrapper.py::WrapperTab",
       "to": "cps/wrapper.py::WrapperTab._track_reload",
+      "kind": "contains"
+    },
+    {
+      "from": "cps/wrapper.py::WrapperTab",
+      "to": "cps/wrapper.py::WrapperTab._utility_command",
       "kind": "contains"
     },
     {
@@ -9933,6 +10506,41 @@
     {
       "from": "tests/test_car_workflow.py::CarWorkflowTests",
       "to": "tests/test_car_workflow.py::CarWorkflowTests.test_zip_import_round_trip_and_clone_behavior",
+      "kind": "contains"
+    },
+    {
+      "from": "tests/test_command_scripts.py",
+      "to": "cps/__init__.py",
+      "kind": "imports"
+    },
+    {
+      "from": "tests/test_command_scripts.py",
+      "to": "cps/command_scripts.py",
+      "kind": "imports"
+    },
+    {
+      "from": "tests/test_command_scripts.py",
+      "to": "cps/config.py",
+      "kind": "imports"
+    },
+    {
+      "from": "tests/test_command_scripts.py",
+      "to": "cps/wrapper.py",
+      "kind": "imports"
+    },
+    {
+      "from": "tests/test_command_scripts.py",
+      "to": "tests/test_command_scripts.py::CommandScriptTests",
+      "kind": "contains"
+    },
+    {
+      "from": "tests/test_command_scripts.py::CommandScriptTests",
+      "to": "tests/test_command_scripts.py::CommandScriptTests.test_console_records_and_replays_utility_commands",
+      "kind": "contains"
+    },
+    {
+      "from": "tests/test_command_scripts.py::CommandScriptTests",
+      "to": "tests/test_command_scripts.py::CommandScriptTests.test_round_trip_and_validation",
       "kind": "contains"
     },
     {
@@ -10562,6 +11170,11 @@
     },
     {
       "from": "tests/test_runtime_gui.py",
+      "to": "cps/filetools.py",
+      "kind": "imports"
+    },
+    {
+      "from": "tests/test_runtime_gui.py",
       "to": "cps/gamedata.py",
       "kind": "imports"
     },
@@ -10717,6 +11330,11 @@
     },
     {
       "from": "tests/test_runtime_gui.py::RuntimeGuiTests",
+      "to": "tests/test_runtime_gui.py::RuntimeGuiTests.test_game_files_opens_slt_in_sqlite_viewer",
+      "kind": "contains"
+    },
+    {
+      "from": "tests/test_runtime_gui.py::RuntimeGuiTests",
       "to": "tests/test_runtime_gui.py::RuntimeGuiTests.test_main_window_has_all_tabs_and_permanent_version",
       "kind": "contains"
     },
@@ -10742,6 +11360,11 @@
     },
     {
       "from": "tests/test_runtime_gui.py::RuntimeGuiTests",
+      "to": "tests/test_runtime_gui.py::RuntimeGuiTests.test_old_saved_layout_does_not_override_new_default",
+      "kind": "contains"
+    },
+    {
+      "from": "tests/test_runtime_gui.py::RuntimeGuiTests",
       "to": "tests/test_runtime_gui.py::RuntimeGuiTests.test_screenshot_default_overlay_and_toolbar_position",
       "kind": "contains"
     },
@@ -10753,6 +11376,11 @@
     {
       "from": "tests/test_runtime_gui.py::RuntimeGuiTests",
       "to": "tests/test_runtime_gui.py::RuntimeGuiTests.test_spawned_refresh_tracks_console_changes_selection_and_deletion",
+      "kind": "contains"
+    },
+    {
+      "from": "tests/test_runtime_gui.py::RuntimeGuiTests",
+      "to": "tests/test_runtime_gui.py::RuntimeGuiTests.test_window_layout_is_restored_and_reset",
       "kind": "contains"
     },
     {
@@ -10813,6 +11441,31 @@
     {
       "from": "tests/test_runtime_gui.py::UpdateTests.test_new_release_popup_contains_repo_link",
       "to": "tests/test_runtime_gui.py::UpdateTests.test_new_release_popup_contains_repo_link.display",
+      "kind": "contains"
+    },
+    {
+      "from": "tests/test_sqlite_viewer.py",
+      "to": "cps/filetools.py",
+      "kind": "imports"
+    },
+    {
+      "from": "tests/test_sqlite_viewer.py",
+      "to": "tests/test_sqlite_viewer.py::SQLiteViewerTests",
+      "kind": "contains"
+    },
+    {
+      "from": "tests/test_sqlite_viewer.py::SQLiteViewerTests",
+      "to": "tests/test_sqlite_viewer.py::SQLiteViewerTests.setUpClass",
+      "kind": "contains"
+    },
+    {
+      "from": "tests/test_sqlite_viewer.py::SQLiteViewerTests",
+      "to": "tests/test_sqlite_viewer.py::SQLiteViewerTests.test_invalid_database_reports_open_error",
+      "kind": "contains"
+    },
+    {
+      "from": "tests/test_sqlite_viewer.py::SQLiteViewerTests",
+      "to": "tests/test_sqlite_viewer.py::SQLiteViewerTests.test_paged_filtered_read_only_database",
       "kind": "contains"
     },
     {
