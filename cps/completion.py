@@ -1,4 +1,8 @@
 """Console command candidates; completion never sends commands to the game."""
+import os
+
+from . import config
+from .command_scripts import CommandScriptStore
 from .travel import MAP_DESTINATIONS, load_places
 
 COMMANDS = (
@@ -17,6 +21,8 @@ COMMANDS = (
     "trace start", "trace stop", "trace status",
     "input record 0", "input record 1", "input record 2", "input record 3",
     "input play", "input stop", "input status",
+    "wrapper play", "wrapper stop", "screenshot", "quit",
+    "script record", "script play ", "script list", "script stop",
     "animations", "animation ",
     "pipelines on", "pipelines off", "pipelines status",
 )
@@ -29,4 +35,6 @@ def command_candidates():
         entries.extend(('tp %d "%s"' % (place.track_id, place.name),
                         'tp "%s"' % place.name,
                         'tp remove "%s"' % place.name))
+    scripts = CommandScriptStore(os.path.join(config.APPDATA, "scripts", "commands"))
+    entries.extend('script play "%s"' % name for name in scripts.names())
     return entries

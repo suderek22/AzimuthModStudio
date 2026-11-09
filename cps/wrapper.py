@@ -23,6 +23,7 @@ from .runtime import Runtime, user32, WS_CHILD, WS_VISIBLE, GWL_STYLE, send_key,
 from .travel import (TRACKS, TeleportPlace, resolve_destination, resolve_track,
                      resolve_place_track, load_places, place_key, validate_place_name,
                      parse_player_position, teleport_entries, track_label, add_place, remove_place)
+from .command_scripts import CommandScriptRecorder, CommandScriptStore
 
 VK_RETURN = 0x0D
 STUDIO_COMMANDS = {"time", "freeze", "weather", "status", "recover", "echo", "car", "animation", "animations",
@@ -147,6 +148,14 @@ class WrapperTab(QWidget):
         self.console_window = None
         self.console_sizes = [620, 160]
         self.scripts_window = None
+        self.command_scripts = CommandScriptStore(os.path.join(config.APPDATA, "scripts", "commands"))
+        self.command_recorder = CommandScriptRecorder(self.command_scripts)
+        self.command_script_timer = QTimer(self)
+        self.command_script_timer.setInterval(20)
+        self.command_script_timer.timeout.connect(self._advance_command_script)
+        self.command_playback = None
+        self.command_playback_index = 0
+        self.command_playback_started = 0
         self.places_window = None
         self.pending_navigation = None
         self._reported_running = False
@@ -845,6 +854,21 @@ class WrapperTab(QWidget):
             pass
 
     def on_command(self, line):
+        line = line.strip()
+        if not line:
+            return
+        first = line.split(None, 1)[0].lower()
+        if first == "script":
+            self._command_script_command(line)
+            return
+        if self.command_recorder.recording and self.command_playback is None:
+            try:
+                self.command_recorder.add(line)
+            except ValueError as ex:
+                self.console.notice("error: %s" % ex, theme.RED)
+        if first == "wrapper" or first in ("screenshot", "quit"):
+            self._utility_command(line)
+            return
         if line in ("help", "?"):
             self.console.notice("Commands go to the FH2 Mod Platform as '<mod> <command>'. Studio shortcuts: "
                                "time <h>, freeze <0|1>, weather <atm> <rain> <env>|off, status, recover <0|1>, "
@@ -863,10 +887,114 @@ class WrapperTab(QWidget):
                                "drivatar pause|play|reset [object ID] (Studio AI only; follow/chase unavailable); "
                                "spawn swap <object ID>|reset|status (driverless cars only; controls and camera); "
                                "drivatar <object ID> swap, drivatar swap reset (same temporary possession); "
-                               "trace start|stop|status; input record <0-3>|play|stop|status. "
+                               "trace start|stop|status; input record <0-3>|play|stop|status; "
+                               "wrapper play|stop; screenshot; quit; "
+                               "script record [name], script play <name>, script list, script stop. "
                                "'list' shows everything.", theme.FG_DIM)
             return
         self.send(line, echo=False)
+
+    def _utility_command(self, line):
+        try:
+            parts = shlex.split(line)
+            first = parts[0].lower()
+            if first == "wrapper":
+                if len(parts) != 2 or parts[1].lower() not in ("play", "stop"):
+                    raise ValueError("usage: wrapper play | wrapper stop")
+                if parts[1].lower() == "play":
+                    self.start()
+                else:
+                    self.stop()
+            elif first == "screenshot":
+                if len(parts) != 1:
+                    raise ValueError("usage: screenshot")
+                self.take_screenshot()
+            else:
+                if len(parts) != 1:
+                    raise ValueError("usage: quit")
+                window = self.window()
+                if window is not None:
+                    window.close()
+                else:
+                    QApplication.quit()
+        except ValueError as ex:
+            self.console.notice("error: %s" % ex, theme.RED)
+
+    def _command_script_command(self, line):
+        try:
+            parts = shlex.split(line)
+            if len(parts) < 2:
+                raise ValueError("usage: script record [name] | script play <name> | script list | script stop")
+            operation = parts[1].lower()
+            if operation == "record":
+                if len(parts) > 3:
+                    raise ValueError("usage: script record [name]")
+                if self.command_playback is not None or self.command_recorder.recording:
+                    raise ValueError("Stop the current command script before starting another.")
+                name = parts[2] if len(parts) == 3 else time.strftime("commands_%Y%m%d_%H%M%S")
+                self.command_recorder.start(name)
+                self.console.notice('Recording commands to "%s". Use "script stop" to save.' % name)
+            elif operation == "play":
+                if len(parts) != 3:
+                    raise ValueError("usage: script play <name>")
+                if self.command_recorder.recording or self.command_playback is not None:
+                    raise ValueError("Stop the current command script before playback.")
+                actions = self.command_scripts.load(parts[2])
+                self.command_playback = actions
+                self.command_playback_index = 0
+                self.command_playback_started = time.monotonic()
+                self.command_script_timer.start()
+                self.console.notice('Playing command script "%s" (%d actions).' % (parts[2], len(actions)))
+                if not actions:
+                    self._finish_command_playback()
+            elif operation == "list" and len(parts) == 2:
+                names = self.command_scripts.names()
+                self.console.notice("Command scripts:\n" + ("\n".join(names) if names else "(none)"))
+            elif operation == "stop" and len(parts) == 2:
+                self._stop_command_scripts()
+            else:
+                raise ValueError("usage: script record [name] | script play <name> | script list | script stop")
+        except (OSError, UnicodeError, ValueError) as ex:
+            self.console.notice("error: %s" % ex, theme.RED)
+
+    def _advance_command_script(self):
+        actions = self.command_playback
+        if actions is None:
+            self.command_script_timer.stop()
+            return
+        elapsed = int((time.monotonic() - self.command_playback_started) * 1000)
+        dispatched = 0
+        while (self.command_playback_index < len(actions) and
+               actions[self.command_playback_index]["at_ms"] <= elapsed and dispatched < 20):
+            command = actions[self.command_playback_index]["command"]
+            self.command_playback_index += 1
+            dispatched += 1
+            self.on_command(command)
+            if self.command_playback is None:
+                return
+        if self.command_playback_index >= len(actions):
+            self._finish_command_playback()
+
+    def _finish_command_playback(self):
+        self.command_script_timer.stop()
+        self.command_playback = None
+        self.command_playback_index = 0
+        self.console.notice("Command script playback finished.")
+
+    def _stop_command_scripts(self):
+        stopped = False
+        if self.command_recorder.recording:
+            path = self.command_recorder.stop()
+            self.console.notice("Command script saved: %s" % path, theme.GREEN)
+            stopped = True
+        if self.command_playback is not None:
+            self.command_script_timer.stop()
+            self.command_playback = None
+            self.command_playback_index = 0
+            self.console.notice("Command script playback stopped.")
+            stopped = True
+        if not stopped:
+            self.console.notice("No command script is recording or playing.")
 
     def send(self, line, echo=True):
         line = line.strip()
@@ -973,6 +1101,14 @@ class WrapperTab(QWidget):
         QTimer.singleShot(1500, self.start)
 
     def shutdown(self):
+        if self.command_recorder.recording:
+            try:
+                path = self.command_recorder.stop()
+                self.console.notice("Command script saved during shutdown: %s" % path)
+            except OSError as ex:
+                self.console.notice("Cannot save command script during shutdown: %s" % ex, theme.RED)
+        self.command_script_timer.stop()
+        self.command_playback = None
         if self.scripts_window and (self.scripts_window.capturing or self.scripts_window.playing) and self.rt.running():
             self.scripts_window.stop()
         self.set_console_detached(False)

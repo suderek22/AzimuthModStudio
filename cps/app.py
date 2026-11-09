@@ -1,9 +1,12 @@
 """Car Pack Studio main window."""
 import os
 import ctypes
+import base64
+import json
 import shutil
 import sqlite3
 import sys
+import tempfile
 import zipfile
 
 from PySide6.QtCore import Qt, QSortFilterProxyModel, QTimer, QEvent
@@ -23,7 +26,7 @@ from .pack import (Project, PackCar, build_pack, install_pack, uninstall_pack, i
 from .viewers import SwatchViewer, ModelViewer, install_gl_format
 from .wrapper import WrapperTab
 from .assets import TEXT_EXT, FILE_FILTER
-from .filetools import BinaryViewer, GameFilesManager
+from .filetools import BinaryViewer, GameFilesManager, SQLiteViewer
 from .audioviewer import BankViewer
 from .runtime_panels import MapsPanel, EventsPanel, SpawnedPanel, ModsPanel
 from .updates import UpdateChecker
@@ -511,7 +514,11 @@ class MainWindow(QMainWindow):
         self.update_checker = UpdateChecker(self)
         self.update_checker.message.connect(self._update_message)
         self._menus()
+        self._apply_default_dock_layout()
+        self._default_dock_state = self.saveState(1)
+        self._default_geometry = self.saveGeometry()
         self.statusBar().showMessage("Ready")
+        self._restore_window_layout()
         QTimer.singleShot(100, self._startup)
 
     def _dock(self, title, w, area):
@@ -598,10 +605,91 @@ class MainWindow(QMainWindow):
         if self.rect().contains(local):
             self.addDockWidget(self._dock_drop_area(local), dock)
         else:
+            self.removeDockWidget(dock)
             dock.setFloating(True)
             dock.move(point)
         dock.show()
         dock.raise_()
+
+    @property
+    def _layout_path(self):
+        return os.path.join(config.APPDATA, "window-layout.json")
+
+    def _apply_default_dock_layout(self):
+        docks = {dock.objectName(): dock for dock in self.findChildren(QDockWidget)}
+        left_tabs = ("Explorer", "Cars", "Maps", "Events", "Spawned", "Mods")
+        for name in left_tabs:
+            self.addDockWidget(Qt.LeftDockWidgetArea, docks[name])
+        output = docks["Output"]
+        self.addDockWidget(Qt.LeftDockWidgetArea, output)
+        self.splitDockWidget(docks["Explorer"], output, Qt.Vertical)
+        for name in left_tabs[1:]:
+            self.tabifyDockWidget(docks["Explorer"], docks[name])
+        for name in left_tabs:
+            docks[name].show()
+        output.show()
+        docks["Cars"].raise_()
+        self.resizeDocks([docks["Cars"], output], [600, 180], Qt.Vertical)
+
+    def _restore_window_layout(self):
+        try:
+            with open(self._layout_path, encoding="utf-8") as stream:
+                layout = json.load(stream)
+            if layout.get("version") == 1:
+                self.statusBar().showMessage(
+                    "Saved dock layout predates the current default; using the new workspace arrangement.", 10000)
+                return
+            if layout.get("version") != 2:
+                raise ValueError("Unsupported saved window-layout version.")
+                return
+            state = base64.b64decode(layout["dock_state"], validate=True)
+            geometry = base64.b64decode(layout["geometry"], validate=True)
+            if not self.restoreState(state, 1):
+                raise ValueError("Qt rejected the saved dock layout.")
+            if not self.restoreGeometry(geometry):
+                raise ValueError("Qt rejected the saved window geometry.")
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError, KeyError, TypeError) as ex:
+            self.restoreState(self._default_dock_state, 1)
+            self.restoreGeometry(self._default_geometry)
+            self.statusBar().showMessage("Could not restore saved layout; using defaults: %s" % ex, 10000)
+
+    def _save_window_layout(self):
+        payload = {
+            "version": 2,
+            "dock_state": base64.b64encode(bytes(self.saveState(1))).decode("ascii"),
+            "geometry": base64.b64encode(bytes(self.saveGeometry())).decode("ascii"),
+        }
+        os.makedirs(config.APPDATA, exist_ok=True)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=config.APPDATA,
+                                             prefix=".window-layout-", suffix=".tmp",
+                                             delete=False) as stream:
+                temporary = stream.name
+                json.dump(payload, stream, indent=2)
+                stream.write("\n")
+            os.replace(temporary, self._layout_path)
+        except OSError:
+            if temporary and os.path.exists(temporary):
+                os.unlink(temporary)
+            raise
+
+    def _reset_window_layout(self):
+        if self._dock_tab_drag:
+            self._dock_tab_drag[0].releaseMouse()
+            self._dock_tab_drag = None
+            self._dock_drop_preview.hide()
+        if not self.restoreState(self._default_dock_state, 1):
+            raise RuntimeError("Could not restore the built-in dock layout.")
+        self.restoreGeometry(self._default_geometry)
+        try:
+            os.unlink(self._layout_path)
+        except FileNotFoundError:
+            pass
+        except OSError as ex:
+            QMessageBox.warning(self, APP_NAME, "Layout reset for this session, but its saved state could not be removed: %s" % ex)
 
     def _menus(self):
         mb = self.menuBar()
@@ -668,6 +756,8 @@ class MainWindow(QMainWindow):
         h.addAction(QAction("Credits", self, triggered=self.credits))
         h.addAction(QAction("About", self, triggered=lambda: QMessageBox.about(
             self, APP_NAME, "%s %s\nBuild car packs for Forza Horizon 2 (Azimuth)." % (APP_NAME, APP_VERSION))))
+        view = mb.addMenu("&View")
+        view.addAction(QAction("Reset window layout", self, triggered=self._reset_window_layout))
 
     # ----------------------------------------------------------- startup / settings
     def _travel_binds_changed(self, enabled):
@@ -1177,13 +1267,28 @@ class MainWindow(QMainWindow):
             if self.tabs.widget(i).property("asset_path") == key:
                 self.tabs.setCurrentIndex(i)
                 return
+        temporary_database = None
         try:
-            if entry is not None:
+            if (entry and entry.lower().endswith(".slt")):
                 with zipfile.ZipFile(path) as archive:
                     data = archive.read(entry)
+                with tempfile.NamedTemporaryFile(suffix=".slt", delete=False) as temporary:
+                    temporary.write(data)
+                    temporary_database = temporary.name
                 name = entry
-                save = None
+                widget = SQLiteViewer(temporary_database, temporary_path=True)
+            elif entry is None and path.lower().endswith(".slt"):
+                name = os.path.basename(path)
+                widget = SQLiteViewer(path)
             else:
+                widget = None
+            if entry is not None:
+                if widget is None:
+                    with zipfile.ZipFile(path) as archive:
+                        data = archive.read(entry)
+                    name = entry
+                    save = None
+            elif widget is None:
                 with open(path, "rb") as f:
                     data = f.read()
                 name = os.path.basename(path)
@@ -1195,8 +1300,14 @@ class MainWindow(QMainWindow):
                     except OSError as ex:
                         QMessageBox.critical(self, "Cannot save file", str(ex))
                         raise
-            widget = self._asset_widget(name, data, save, "archive entry (read-only)" if entry else "on-disk file")
+            if widget is None:
+                widget = self._asset_widget(name, data, save, "archive entry (read-only)" if entry else "on-disk file")
         except (OSError, ValueError, KeyError, zipfile.BadZipFile) as ex:
+            if temporary_database:
+                try:
+                    os.remove(temporary_database)
+                except OSError:
+                    pass
             QMessageBox.warning(self, "Cannot open asset", "%s%s\n%s" % (path, " :: " + entry if entry else "", ex))
             return
         widget.setProperty("asset_path", key)
@@ -1532,6 +1643,10 @@ class MainWindow(QMainWindow):
                 widget.shutdown()
         self.update_checker.shutdown()
         self.wrapper.shutdown()
+        try:
+            self._save_window_layout()
+        except OSError as ex:
+            QMessageBox.warning(self, APP_NAME, "Could not save the window layout: %s" % ex)
         config.save(self.s)
         super().closeEvent(e)
 

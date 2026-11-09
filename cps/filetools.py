@@ -1,15 +1,183 @@
 """Mounted loose-file and ZIP browsing with shared read-only binary inspection."""
 import os
+import sqlite3
+from contextlib import closing
+from pathlib import Path
 import zipfile
 
-from PySide6.QtCore import Qt, Signal, QDir, QSortFilterProxyModel
+from PySide6.QtCore import Qt, Signal, QDir, QSortFilterProxyModel, QTimer
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
                                QSpinBox, QTabWidget, QSplitter, QTreeView, QFileSystemModel,
-                               QFileDialog, QMessageBox)
+                               QFileDialog, QMessageBox, QTableWidget, QTableWidgetItem, QComboBox,
+                               QHeaderView)
 
 from .assets import SUPPORTED_EXT, inspect_binary, strings, hex_page
 from .editors import CodeEditor
+
+
+class SQLiteViewer(QWidget):
+    PAGE_SIZE = 100
+    TEXT_PREVIEW_LENGTH = 2048
+    BLOB_PREVIEW_LENGTH = 64
+
+    def __init__(self, path, temporary_path=False):
+        super().__init__()
+        self.path = os.path.abspath(path)
+        self.temporary_path = temporary_path
+        if temporary_path:
+            temporary_file = self.path
+            self.destroyed.connect(lambda _obj=None: SQLiteViewer._remove_temporary_file(temporary_file))
+        layout = QVBoxLayout(self)
+        controls = QHBoxLayout()
+        controls.addWidget(QLabel("Table:"))
+        self.table = QComboBox()
+        self.table.currentTextChanged.connect(self._table_changed)
+        controls.addWidget(self.table)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search values in this table...")
+        controls.addWidget(self.search, 1)
+        self.previous = QPushButton("Previous")
+        self.next = QPushButton("Next")
+        controls.addWidget(self.previous)
+        controls.addWidget(self.next)
+        layout.addLayout(controls)
+        self.schema = QLabel()
+        self.schema.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addWidget(self.schema)
+        self.status = QLabel()
+        layout.addWidget(self.status)
+        self.rows = QTableWidget()
+        self.rows.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.rows.setAlternatingRowColors(True)
+        self.rows.setWordWrap(False)
+        self.rows.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.rows.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self.rows, 1)
+        self.page = 0
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(250)
+        self.search.textChanged.connect(self._schedule_refresh)
+        self.previous.clicked.connect(self._previous_page)
+        self.next.clicked.connect(self._next_page)
+        self._load_tables()
+
+    def _connect(self):
+        uri = Path(self.path).resolve().as_uri() + "?mode=ro"
+        connection = sqlite3.connect(uri, uri=True, timeout=5)
+        connection.execute("PRAGMA query_only=ON")
+        return connection
+
+    def _load_tables(self):
+        try:
+            with closing(self._connect()) as connection:
+                names = [row[0] for row in connection.execute(
+                    "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' "
+                    "ORDER BY name COLLATE NOCASE")]
+        except (OSError, sqlite3.Error) as ex:
+            self.status.setText("Cannot open SQLite database read-only: %s" % ex)
+            self.table.setEnabled(False)
+            self.search.setEnabled(False)
+            self.previous.setEnabled(False)
+            self.next.setEnabled(False)
+            return
+        self.table.addItems(names)
+        if not names:
+            self.status.setText("No user tables found in this database.")
+
+    @staticmethod
+    def _quoted(identifier):
+        return '"' + identifier.replace('"', '""') + '"'
+
+    def _table_changed(self, _name):
+        self.page = 0
+        self.refresh()
+
+    def _schedule_refresh(self):
+        self.page = 0
+        self._refresh_timer.start()
+
+    def _previous_page(self):
+        if self.page:
+            self.page -= 1
+            self.refresh()
+
+    def _next_page(self):
+        self.page += 1
+        if not self.refresh():
+            self.page = max(0, self.page - 1)
+            self.refresh()
+
+    def refresh(self):
+        table_name = self.table.currentText()
+        if not table_name:
+            return False
+        table = self._quoted(table_name)
+        try:
+            with closing(self._connect()) as connection:
+                columns = [row[1] for row in connection.execute("PRAGMA table_info(%s)" % table)]
+                if not columns:
+                    raise sqlite3.DatabaseError("Selected table no longer exists.")
+                predicates = []
+                values = []
+                needle = self.search.text().strip()
+                if needle:
+                    predicates = ["CAST(%s AS TEXT) LIKE ? ESCAPE '\\'" % self._quoted(column)
+                                  for column in columns]
+                    escaped = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                    values = ["%" + escaped + "%"] * len(predicates)
+                where = " WHERE " + " OR ".join(predicates) if predicates else ""
+                projected = []
+                for column in columns:
+                    quoted = self._quoted(column)
+                    projected.append(
+                        "CASE WHEN typeof({0})='blob' THEN printf('[BLOB %d bytes] %s',length({0}),"
+                        "hex(substr({0},1,{1}))) WHEN typeof({0})='text' AND length({0})>{2} THEN "
+                        "substr({0},1,{2})||'…' ELSE {0} END AS {3}".format(
+                            quoted, self.BLOB_PREVIEW_LENGTH, self.TEXT_PREVIEW_LENGTH, quoted))
+                rows = connection.execute(
+                    "SELECT %s FROM %s%s LIMIT ? OFFSET ?" %
+                    (", ".join(projected), table, where),
+                    values + [self.PAGE_SIZE + 1, self.page * self.PAGE_SIZE]).fetchall()
+            has_next = len(rows) > self.PAGE_SIZE
+            rows = rows[:self.PAGE_SIZE]
+            self.rows.clear()
+            self.rows.setColumnCount(len(columns))
+            self.rows.setHorizontalHeaderLabels(columns)
+            self.rows.setRowCount(len(rows))
+            for row_index, row in enumerate(rows):
+                for column_index, value in enumerate(row):
+                    item = QTableWidgetItem("" if value is None else str(value))
+                    self.rows.setItem(row_index, column_index, item)
+            self.schema.setText("Columns: " + ", ".join(columns))
+            start = self.page * self.PAGE_SIZE
+            end = start + len(rows)
+            self.status.setText("Read-only database | rows %s-%s | page %d" %
+                                (start + 1 if rows else 0, end, self.page + 1))
+            self.previous.setEnabled(self.page > 0)
+            self.next.setEnabled(has_next)
+            return True
+        except (OSError, sqlite3.Error) as ex:
+            self.status.setText("Cannot read table: %s" % ex)
+            self.rows.setRowCount(0)
+            self.previous.setEnabled(False)
+            self.next.setEnabled(False)
+            return False
+
+    def closeEvent(self, event):
+        if self.temporary_path:
+            self._remove_temporary_file(self.path)
+        super().closeEvent(event)
+
+    @staticmethod
+    def _remove_temporary_file(path):
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
 
 
 class BinaryViewer(QWidget):

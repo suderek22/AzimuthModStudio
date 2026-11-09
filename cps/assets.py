@@ -8,7 +8,7 @@ from .bundle import Bundle
 
 TEXT_EXT = (".xml", ".xaml", ".txt", ".log", ".ini", ".sql", ".json", ".avpins")
 BINARY_EXT = (".materialbin", ".shaderbin", ".pso", ".vso", ".carbin", ".bin")
-SUPPORTED_EXT = TEXT_EXT + BINARY_EXT + (".swatchbin", ".modelbin", ".bank")
+SUPPORTED_EXT = TEXT_EXT + BINARY_EXT + (".swatchbin", ".modelbin", ".bank", ".slt")
 FILE_FILTER = "Supported assets (%s);;ZIP archives (*.zip);;All files (*)" % " ".join(
     "*" + ext for ext in SUPPORTED_EXT)
 
